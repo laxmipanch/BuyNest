@@ -1,0 +1,18 @@
+{
+  "name": "buynest",
+  "version": "1.0.0",
+  "description": "BuyNest — a simple e-commerce app built with Express and vanilla JS",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

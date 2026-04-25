@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product — BuyNest</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-inner">
+      <a href="/index.html" class="logo">🛍️ BuyNest</a>
+
+      <div class="header-search">
+        <span class="search-icon">🔍</span>
+        <input type="search" id="headerSearch" placeholder="Search products…" autocomplete="off"
+               aria-label="Search products"
+               onkeydown="if(event.key==='Enter')location.href='/index.html?q='+encodeURIComponent(this.value)">
+      </div>
+
+      <nav class="header-nav">
+        <a href="/index.html">Shop</a>
+        <a href="/orders.html">Orders</a>
+      </nav>
+
+      <button class="cart-btn" id="cartToggleBtn" aria-label="Open cart">
+        🛒
+        <span class="cart-badge empty" id="cartBadge">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Cart Sidebar ────────────────────────────────────────────────── -->
+  <div class="cart-overlay" id="cartOverlay" aria-hidden="true"></div>
+  <aside class="cart-sidebar" id="cartSidebar" aria-label="Shopping cart">
+    <div class="cart-sidebar-header">
+      <h2>🛒 Shopping Cart</h2>
+      <button class="cart-close-btn" id="cartCloseBtn" aria-label="Close cart">✕</button>
+    </div>
+    <div class="cart-body" id="cartBody"></div>
+    <div class="cart-footer">
+      <div class="cart-total-row">
+        <span class="cart-total-label">Total</span>
+        <span class="cart-total-amount" id="cartTotalAmount">$0.00</span>
+      </div>
+      <a href="/checkout.html" class="cart-checkout-btn" id="cartCheckoutBtn">Proceed to Checkout →</a>
+    </div>
+  </aside>
+
+  <!-- ── Product Detail ───────────────────────────────────────────────── -->
+  <div class="page-banner">
+    <div class="container">
+      <p style="color:rgba(255,255,255,.6);font-size:.85rem">
+        <a href="/index.html" style="color:rgba(255,255,255,.6)">Shop</a> / Product Detail
+      </p>
+    </div>
+  </div>
+
+  <main class="product-detail-section">
+    <div class="container">
+      <div id="detailContainer"></div>
+    </div>
+  </main>
+
+  <!-- ── Footer ───────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <strong>BuyNest</strong> &copy; 2025 — A demo e-commerce app
+  </footer>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/toast.js"></script>
+  <script src="/js/cart.js"></script>
+  <script src="/js/product-detail.js"></script>
+</body>
+</html>

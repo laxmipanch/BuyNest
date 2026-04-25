@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node server/index.js)",
+      "Bash(curl -s http://localhost:3000/api/products)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('Products:', d.length\\); d.slice\\(0,3\\).forEach\\(p=>console.log\\(' -', p.id, p.name, '$'+p.price, p.stock+'x'\\)\\)\")",
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\);console.log\\('Products:',p.length\\);p.slice\\(0,4\\).forEach\\(x=>console.log\\(' -',x.id,x.name,'$'+x.price,'stock:'+x.stock\\)\\)}\\)\")",
+      "Bash(curl -s http://localhost:3000/api/products/5)",
+      "Bash(curl -s -X POST http://localhost:3000/api/orders -H \"Content-Type: application/json\" -d \"{\\\\\"customer_name\\\\\":\\\\\"Jane Smith\\\\\",\\\\\"customer_email\\\\\":\\\\\"jane@example.com\\\\\",\\\\\"customer_address\\\\\":\\\\\"123 Main St, Springfield\\\\\",\\\\\"items\\\\\":[{\\\\\"id\\\\\":1,\\\\\"name\\\\\":\\\\\"Headphones\\\\\",\\\\\"price\\\\\":89.99,\\\\\"qty\\\\\":1,\\\\\"emoji\\\\\":\\\\\"🎧\\\\\"}],\\\\\"total\\\\\":89.99}\")",
+      "Bash(curl -s http://localhost:3000/api/orders)",
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const o=JSON.parse\\(d\\);console.log\\('Orders:',o.length\\);o.forEach\\(x=>console.log\\(' -',x.order_id,'total:$'+x.total,'items:',x.items.length\\)\\)}\\)\")"
+    ]
+  }
+}

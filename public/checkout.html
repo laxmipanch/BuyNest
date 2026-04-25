@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout — BuyNest</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-inner">
+      <a href="/index.html" class="logo">🛍️ BuyNest</a>
+
+      <nav class="header-nav">
+        <a href="/index.html">Shop</a>
+        <a href="/orders.html">Orders</a>
+      </nav>
+
+      <button class="cart-btn" id="cartToggleBtn" aria-label="Open cart">
+        🛒
+        <span class="cart-badge empty" id="cartBadge">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Cart Sidebar ────────────────────────────────────────────────── -->
+  <div class="cart-overlay" id="cartOverlay" aria-hidden="true"></div>
+  <aside class="cart-sidebar" id="cartSidebar" aria-label="Shopping cart">
+    <div class="cart-sidebar-header">
+      <h2>🛒 Shopping Cart</h2>
+      <button class="cart-close-btn" id="cartCloseBtn" aria-label="Close cart">✕</button>
+    </div>
+    <div class="cart-body" id="cartBody"></div>
+    <div class="cart-footer">
+      <div class="cart-total-row">
+        <span class="cart-total-label">Total</span>
+        <span class="cart-total-amount" id="cartTotalAmount">$0.00</span>
+      </div>
+      <a href="/checkout.html" class="cart-checkout-btn" id="cartCheckoutBtn">Proceed to Checkout →</a>
+    </div>
+  </aside>
+
+  <!-- ── Page Banner ──────────────────────────────────────────────────── -->
+  <div class="page-banner">
+    <div class="container">
+      <h1>Checkout</h1>
+      <p>Review your order and enter your details below</p>
+    </div>
+  </div>
+
+  <!-- ── Checkout Content ─────────────────────────────────────────────── -->
+  <main class="checkout-section">
+    <div class="container">
+
+      <!-- Empty cart notice (hidden when cart has items) -->
+      <div id="emptyCartNotice" class="empty-cart-notice hidden">
+        <div class="icon">🛒</div>
+        <h2>Your cart is empty</h2>
+        <p style="margin-bottom:20px">Add some products before checking out.</p>
+        <a href="/index.html" class="btn btn-primary">Browse Products</a>
+      </div>
+
+      <div id="formWrap" class="checkout-grid hidden">
+
+        <!-- Left: Customer details form -->
+        <div class="checkout-card">
+          <h2>Your Details</h2>
+          <form id="checkoutForm" novalidate>
+
+            <div class="form-group">
+              <label class="form-label" for="name">Full Name</label>
+              <input class="form-input" type="text" id="name" name="name"
+                     placeholder="Jane Smith" autocomplete="name" required>
+              <p class="form-error" id="nameError"></p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="email">Email Address</label>
+              <input class="form-input" type="email" id="email" name="email"
+                     placeholder="jane@example.com" autocomplete="email" required>
+              <p class="form-error" id="emailError"></p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="address">Delivery Address</label>
+              <textarea class="form-textarea" id="address" name="address"
+                        placeholder="123 Main St, City, State, ZIP" autocomplete="street-address" required></textarea>
+              <p class="form-error" id="addressError"></p>
+            </div>
+
+            <button type="submit" class="place-order-btn btn">
+              🎉 Place Order
+            </button>
+
+          </form>
+        </div>
+
+        <!-- Right: Order summary -->
+        <aside class="order-summary-card">
+          <h2>Order Summary</h2>
+          <div id="orderSummaryItems"></div>
+          <div id="summaryTotal"></div>
+        </aside>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Footer ───────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <strong>BuyNest</strong> &copy; 2025 — A demo e-commerce app
+  </footer>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/toast.js"></script>
+  <script src="/js/cart.js"></script>
+  <script src="/js/checkout.js"></script>
+</body>
+</html>
