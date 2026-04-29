@@ -224,25 +224,96 @@ function ScreenHeader({ persona, tab, setTab, tabs, greeting }) {
 // TAB 1 — MLR Review
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Cross-tab MLR queue store (module-level pub/sub) ─────────────────────────
+let _mlrQueue = [];
+const _mlrListeners = new Set();
+function _notifyMLR() { _mlrListeners.forEach(fn => fn([..._mlrQueue])); }
+function pushMLRItem(item) { _mlrQueue = [..._mlrQueue, item]; _notifyMLR(); }
+function updateMLRItem(id, patch) { _mlrQueue = _mlrQueue.map(i => i.id === id ? { ...i, ...patch } : i); _notifyMLR(); }
+function useMLRQueue() {
+  const [q, setQ] = useState([..._mlrQueue]);
+  useEffect(() => { _mlrListeners.add(setQ); return () => _mlrListeners.delete(setQ); }, []);
+  return q;
+}
+
 const MLR_STEPS = [
   { key: 'ingestion',       label: 'Ingesting document' },
   { key: 'preprocessing',   label: 'Preprocessing & detecting sections' },
   { key: 'understanding',   label: 'Understanding content (LLM)' },
-  { key: 'rule_evaluation', label: 'Evaluating MLR rules' },
-  { key: 'aggregation',     label: 'Aggregating scores' },
-  { key: 'reporting',       label: 'Generating report' },
+  { key: 'rule_evaluation', label: 'Evaluating 18 MLR rules (M/L/R)' },
+  { key: 'aggregation',     label: 'Aggregating scores by section' },
+  { key: 'reporting',       label: 'Generating compliance report' },
 ];
 
 const MLR_RULES_META = [
-  { id: 'R1', name: 'Safety Information Required',        category: 'Mandatory',   severity: 'high'   },
-  { id: 'R2', name: 'Disclaimer Presence',                category: 'Mandatory',   severity: 'high'   },
-  { id: 'R3', name: 'No Absolute Claims',                 category: 'Validation',  severity: 'high'   },
-  { id: 'R4', name: 'Balanced Messaging',                 category: 'Validation',  severity: 'medium' },
-  { id: 'R5', name: 'Numerical Claims Require Reference', category: 'Validation',  severity: 'medium' },
-  { id: 'R6', name: 'Reference Section Present',          category: 'Format',      severity: 'low'    },
-  { id: 'R7', name: 'Audience Alignment — HCP',           category: 'Compliance',  severity: 'medium' },
-  { id: 'R8', name: 'Promotional Tone Check',             category: 'Compliance',  severity: 'medium' },
+  // ─ Medical (M) ─────────────────────────────────────────────────────────────
+  { id: 'M1', section: 'M', name: 'Fair Balance Required',            category: 'Mandatory',   severity: 'high'   },
+  { id: 'M2', section: 'M', name: 'AE Disclosure Complete',           category: 'Mandatory',   severity: 'high'   },
+  { id: 'M3', section: 'M', name: 'Approved Indication Only',         category: 'Mandatory',   severity: 'high'   },
+  { id: 'M4', section: 'M', name: 'Clinical Data Accuracy',           category: 'Validation',  severity: 'high'   },
+  { id: 'M5', section: 'M', name: 'Comparative Claims Substantiated', category: 'Validation',  severity: 'medium' },
+  { id: 'M6', section: 'M', name: 'Statistical Context Provided',     category: 'Validation',  severity: 'medium' },
+  // ─ Legal (L) ───────────────────────────────────────────────────────────────
+  { id: 'L1', section: 'L', name: 'No Absolute Claims',               category: 'Validation',  severity: 'high'   },
+  { id: 'L2', section: 'L', name: 'Trademark Usage Correct',          category: 'Format',      severity: 'medium' },
+  { id: 'L3', section: 'L', name: 'Copyright & Attribution',          category: 'Format',      severity: 'low'    },
+  { id: 'L4', section: 'L', name: 'Claims Substantiation On File',    category: 'Compliance',  severity: 'medium' },
+  { id: 'L5', section: 'L', name: 'No Misleading Comparisons',        category: 'Validation',  severity: 'medium' },
+  { id: 'L6', section: 'L', name: 'Legal Disclaimer Present',         category: 'Format',      severity: 'low'    },
+  // ─ Regulatory (R) ──────────────────────────────────────────────────────────
+  { id: 'REG1', section: 'R', name: 'ISI Completeness',               category: 'Mandatory',   severity: 'high'   },
+  { id: 'REG2', section: 'R', name: 'Boxed Warning Present',          category: 'Mandatory',   severity: 'high'   },
+  { id: 'REG3', section: 'R', name: 'Prescribing Information Cited',  category: 'Mandatory',   severity: 'high'   },
+  { id: 'REG4', section: 'R', name: 'Promotional Tone Compliant',     category: 'Compliance',  severity: 'medium' },
+  { id: 'REG5', section: 'R', name: 'Audience Appropriate',           category: 'Compliance',  severity: 'medium' },
+  { id: 'REG6', section: 'R', name: 'Reference Section Complete',     category: 'Format',      severity: 'low'    },
 ];
+
+// Map legacy backend rule IDs (R1–R8) → new section IDs
+const LEGACY_RULE_SECTION = { R1:'R', R2:'R', R3:'L', R4:'M', R5:'M', R6:'R', R7:'R', R8:'L' };
+function getRuleSection(ruleId) {
+  const meta = MLR_RULES_META.find(r => r.id === ruleId);
+  if (meta) return meta.section;
+  return LEGACY_RULE_SECTION[ruleId] || 'M';
+}
+
+// Synthetic MLR result for Content-Studio queue submissions
+function generateStudioMLRResult(queueItem) {
+  const PENALTY = { high: 20, medium: 10, low: 5 };
+  const FIXES = {
+    M5:   'Add citation: "[Wilding et al., STEP-1, NEJM 2021]" or rephrase as "Wegovy achieved 14.9% weight reduction in STEP-1."',
+    M6:   'Add citation for the real-world persistence claim: "[Author et al., 2024][X]" and include in reference list.',
+    L1:   'Replace superlative with: "Wegovy achieved 14.9% weight loss — among the highest in the GLP-1 class (STEP-1).[1]"',
+    REG1: 'Add ISI block or: "See full Prescribing Information including Boxed Warning at [URL]."',
+  };
+  const varViolations = {
+    A: [{ rule_id:'M5', section:'M', severity:'medium', name:'Comparative Claims Substantiated',
+          message:'Efficacy claim "14.9% vs. lifestyle alone" implies class comparison without head-to-head citation.',
+          explanation:'Comparative or superlative language requires direct supporting evidence or must be scoped to the trial.' }],
+    B: [{ rule_id:'REG1', section:'R', severity:'high',   name:'ISI Completeness',
+          message:'Abbreviated ISI present but full boxed-warning block is missing.',
+          explanation:'Short-format pieces must include the full ISI text or a direct URL reference per FDA promotional guidelines.' }],
+    C: [{ rule_id:'L1',  section:'L', severity:'high',   name:'No Absolute Claims',
+          message:'"Highest weight reduction in its class" is a superlative claim requiring head-to-head evidence.',
+          explanation:'Without a direct comparative trial, "highest in class" cannot be substantiated. Rephrase or add citation.' },
+        { rule_id:'M6',  section:'M', severity:'medium', name:'Statistical Context Provided',
+          message:'"12+ months persistence" claim has no n= or study citation.',
+          explanation:'All quantitative claims require a citation number with the source study listed in the reference section.' }],
+  };
+  const violations = varViolations[queueItem.variation] || [];
+  const violatedIds = new Set(violations.map(v => v.rule_id));
+  const passedRules = MLR_RULES_META.filter(r => !violatedIds.has(r.id)).map(r => ({ rule_id: r.id, name: r.name, section: r.section }));
+  const penalty = violations.reduce((s, v) => s + (PENALTY[v.severity] || 0), 0);
+  const score = Math.max(0, 100 - penalty);
+  const sev = violations.reduce((a, v) => ({ ...a, [v.severity]: (a[v.severity] || 0) + 1 }), {});
+  return {
+    compliance_status: score >= 80 ? 'Approved' : score >= 60 ? 'Needs Review' : 'Rejected',
+    score, violations, passed_rules: passedRules,
+    severity_summary: sev,
+    suggestions: violations.map(v => ({ rule_id: v.rule_id, name: v.name, section: v.section, severity: v.severity, fix: FIXES[v.rule_id] || 'Review and update this section.' })),
+    metadata: { title: queueItem.title, word_count: queueItem.wordCount, tone: queueItem.tone, audience_type: queueItem.audience },
+  };
+}
 
 const SEVERITY_CFG = {
   high:   { color: RED,    bg: '#FFF3F2', label: 'High'   },
@@ -325,15 +396,21 @@ function SeverityBadge({ severity }) {
 }
 
 function MLRReviewTab() {
-  const [docText,  setDocText]  = useState('');
-  const [fileName, setFileName] = useState('');
-  const [dragging, setDragging] = useState(false);
-  const [running,  setRunning]  = useState(false);
-  const [logs,     setLogs]     = useState({});
-  const [result,   setResult]   = useState(null);
-  const [error,    setError]    = useState('');
-  const [overrides, setOverrides] = useState({});   // rule_id → 'override'
-  const [feedback,  setFeedback]  = useState({});   // rule_id → string
+  // ── State ──────────────────────────────────────────────────────────────────
+  const mlrQueue = useMLRQueue();
+  const [activeQueueId,  setActiveQueueId]  = useState(null);
+  const [mlrSection,     setMlrSection]     = useState('M');   // 'M' | 'L' | 'R'
+  const [docText,        setDocText]        = useState('');
+  const [fileName,       setFileName]       = useState('');
+  const [dragging,       setDragging]       = useState(false);
+  const [running,        setRunning]        = useState(false);
+  const [logs,           setLogs]           = useState({});
+  const [result,         setResult]         = useState(null);
+  const [error,          setError]          = useState('');
+  const [overrides,      setOverrides]      = useState({});
+  const [feedback,       setFeedback]       = useState({});
+  const [showSendBack,   setShowSendBack]   = useState(false);
+  const [sendBackReason, setSendBackReason] = useState('');
   const fileRef  = useRef(null);
   const abortRef = useRef(null);
 
@@ -411,38 +488,79 @@ function MLRReviewTab() {
     }
   }
 
-  function handleOverride(ruleId) {
-    setOverrides(prev => ({
-      ...prev,
-      [ruleId]: prev[ruleId] === 'override' ? null : 'override',
-    }));
+  // ── Queue-item handlers ────────────────────────────────────────────────────
+  function selectQueueItem(item) {
+    setActiveQueueId(item.id);
+    setDocText(item.content || '');
+    setFileName(item.title);
+    setLogs({});
+    setError('');
+    setOverrides({});
+    setFeedback({});
+    setShowSendBack(false);
+    setSendBackReason('');
+    setMlrSection('M');
+    setResult(null);
+    setRunning(true);
+    // Populate all steps as "done" immediately for visual continuity
+    setLogs(Object.fromEntries(MLR_STEPS.map(s => [s.key, { status: 'done', message: 'Complete' }])));
+    setTimeout(() => { setResult(generateStudioMLRResult(item)); setRunning(false); }, 900);
   }
 
+  function clearQueueItem() {
+    setActiveQueueId(null);
+    setDocText(''); setFileName(''); setLogs({}); setResult(null);
+    setError(''); setOverrides({}); setFeedback({});
+    setShowSendBack(false); setSendBackReason('');
+  }
+
+  function handleAccept() {
+    if (activeQueueId) updateMLRItem(activeQueueId, { status: 'approved' });
+  }
+
+  function handleSendBack() {
+    if (activeQueueId) updateMLRItem(activeQueueId, { status: 'sent_back', sendBackReason });
+    setShowSendBack(false); setSendBackReason('');
+  }
+
+  function handleOverride(ruleId) {
+    setOverrides(prev => ({ ...prev, [ruleId]: prev[ruleId] === 'override' ? null : 'override' }));
+  }
+
+  // ── Derived state ──────────────────────────────────────────────────────────
   const hasDoc    = docText.trim().length > 0;
   const hasResult = result && result.compliance_status;
   const anyLog    = Object.keys(logs).length > 0;
 
-  const effectiveViolations = hasResult
-    ? (result.violations || []).filter(v => overrides[v.rule_id] !== 'override')
-    : [];
-  const overrideCount = Object.values(overrides).filter(v => v === 'override').length;
+  const SECTION_CFG = {
+    M: { label: 'Medical',    color: '#0F766E', bg: '#F0FDFA', border: '#99F6E4' },
+    L: { label: 'Legal',      color: VIOLET,   bg: '#F5F3FF', border: '#DDD6FE' },
+    R: { label: 'Regulatory', color: AMBER,    bg: '#FFFBEB', border: '#FDE68A' },
+  };
 
-  // Adjusted score after reviewer overrides
+  const effectiveViolations = hasResult ? (result.violations || []).filter(v => overrides[v.rule_id] !== 'override') : [];
+  const overrideCount = Object.values(overrides).filter(v => v === 'override').length;
   const PENALTY = { high: 20, medium: 10, low: 5 };
   const adjustedScore = hasResult
-    ? Math.min(100, (result.score || 0) +
-        Object.entries(overrides)
-          .filter(([, v]) => v === 'override')
-          .reduce((sum, [rid]) => {
-            const viol = (result.violations || []).find(v => v.rule_id === rid);
-            return sum + (PENALTY[viol?.severity] || 0);
-          }, 0))
+    ? Math.min(100, (result.score || 0) + Object.entries(overrides).filter(([, v]) => v === 'override').reduce((sum, [rid]) => { const viol = (result.violations || []).find(v => v.rule_id === rid); return sum + (PENALTY[viol?.severity] || 0); }, 0))
     : 0;
-  const adjustedStatus =
-    adjustedScore >= 80 ? 'Approved' : adjustedScore >= 60 ? 'Needs Review' : 'Rejected';
+  const adjustedStatus = adjustedScore >= 80 ? 'Approved' : adjustedScore >= 60 ? 'Needs Review' : 'Rejected';
+
+  function secStatus(sec) {
+    const vs = effectiveViolations.filter(v => getRuleSection(v.rule_id) === sec);
+    if (vs.some(v => v.severity === 'high')) return 'high';
+    if (vs.length > 0) return 'medium';
+    return 'pass';
+  }
+  const secViolations  = hasResult ? effectiveViolations.filter(v => getRuleSection(v.rule_id) === mlrSection) : [];
+  const secPassed      = hasResult ? (result.passed_rules || []).filter(r => getRuleSection(r.rule_id || r.id) === mlrSection) : [];
+  const secSuggestions = hasResult ? (result.suggestions  || []).filter(s => getRuleSection(s.rule_id) === mlrSection) : [];
+  const activeQueueItem = _mlrQueue.find(i => i.id === activeQueueId);
+  const queueItemStatus = activeQueueItem?.status;
 
   return (
     <div style={{ padding: '20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Agent banner */}
       <div style={{
@@ -451,23 +569,66 @@ function MLRReviewTab() {
         display: 'flex', gap: 14, alignItems: 'flex-start',
       }}>
         <CheckCircle2 size={16} color={RED} style={{ flexShrink: 0, marginTop: 2 }} />
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: RED, marginBottom: 3 }}>
             MLR Review Agent · <span style={{ fontWeight: 400, color: MUTED }}>
-              8 rules · LLM extraction + deterministic evaluation · score = 100 − Σ penalties
+              18 rules · Medical / Legal / Regulatory · LLM + deterministic evaluation
             </span>
           </div>
           <div style={{ fontSize: 12, color: INK, lineHeight: 1.6 }}>
-            Upload a TXT document to run the full compliance pipeline.
-            The agent evaluates <strong>mandatory presence</strong>, <strong>content validation</strong>,
-            <strong> format checks</strong>, and <strong>tone compliance</strong> across all 8 MLR rules.
+            Submit content via <strong>Content Studio</strong> to auto-load it here, or upload a document manually.
+            The agent evaluates all 18 rules across <strong>M</strong>, <strong>L</strong>, and <strong>R</strong> sections and produces a scored report with fix suggestions.
           </div>
         </div>
       </div>
 
+      {/* ── Queue inbox (items submitted from Content Studio) ── */}
+      {mlrQueue.length > 0 && (
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '11px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 10, background: 'linear-gradient(90deg, #F6F9FC 0%, #fff 100%)' }}>
+            <ClipboardList size={14} color={ACCENT} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Submitted for Review</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT, background: '#E0F2FE', padding: '2px 8px', borderRadius: 99 }}>
+              {mlrQueue.filter(i => i.status === 'pending').length} pending
+            </span>
+            {activeQueueId && (
+              <button onClick={clearQueueItem} style={{ marginLeft: 'auto', fontSize: 11, color: MUTED, border: 'none', background: 'none', cursor: 'pointer' }}>✕ Close</button>
+            )}
+          </div>
+          <div style={{ padding: '10px 18px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {mlrQueue.map(item => {
+              const isActive = activeQueueId === item.id;
+              const stCfg = item.status === 'approved'  ? { color: GREEN,  bg: '#E8F7F0', label: '✓ Approved'  }
+                          : item.status === 'sent_back' ? { color: AMBER,  bg: '#FFF8E6', label: '↩ Sent Back' }
+                          :                               { color: ACCENT, bg: '#E0F2FE', label: '● Pending'   };
+              return (
+                <button key={item.id} onClick={() => selectQueueItem(item)} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 14px', borderRadius: 10,
+                  border: `2px solid ${isActive ? ACCENT : BORDER}`,
+                  background: isActive ? '#F0F9FF' : '#fff',
+                  cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, background: isActive ? ACCENT : '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: isActive ? '#fff' : ACCENT }}>
+                    {item.variation}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: isActive ? ACCENT : INK }}>{item.title}</div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
+                      {item.submittedAt} · {item.audience}
+                      <span style={{ marginLeft: 7, padding: '1px 7px', borderRadius: 99, fontSize: 9, fontWeight: 700, background: stCfg.bg, color: stCfg.color }}>{stCfg.label}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20, alignItems: 'start' }}>
 
-        {/* ── Left: upload + log ── */}
+        {/* ── Left: upload + log + rules ref ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
           {/* Upload zone */}
@@ -554,88 +715,88 @@ function MLRReviewTab() {
             </div>
           )}
 
-          {/* Rules reference */}
+          {/* 18-rule reference grouped by M / L / R */}
           <div style={{ background: '#fff', borderRadius: 10, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 7 }}>
               <Info size={12} color={MUTED} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>MLR Rules (8)</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>Rules Reference</span>
+              <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: MUTED }}>18 rules</span>
             </div>
-            <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {MLR_RULES_META.map(rule => (
-                <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, color: ACCENT, background: '#E0F2FE',
-                    padding: '1px 5px', borderRadius: 4, flexShrink: 0,
-                  }}>{rule.id}</span>
-                  <span style={{ fontSize: 10, color: INK, flex: 1 }}>{rule.name}</span>
-                  <SeverityBadge severity={rule.severity} />
+            {['M', 'L', 'R'].map(sec => {
+              const scfg = SECTION_CFG[sec];
+              const rules = MLR_RULES_META.filter(r => r.section === sec);
+              return (
+                <div key={sec} style={{ borderBottom: sec !== 'R' ? `1px solid ${BORDER}` : 'none' }}>
+                  <div style={{ padding: '5px 14px', background: scfg.bg, fontSize: 10, fontWeight: 800, color: scfg.color, letterSpacing: '0.05em' }}>
+                    {sec} — {scfg.label}
+                  </div>
+                  <div style={{ padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {rules.map(rule => (
+                      <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: scfg.color, background: scfg.bg, padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{rule.id}</span>
+                        <span style={{ fontSize: 10, color: INK, flex: 1, lineHeight: 1.3 }}>{rule.name}</span>
+                        <SeverityBadge severity={rule.severity} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* ── Right: results ── */}
+        {/* ── Right panel ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
+          {/* Idle */}
           {!hasResult && !anyLog && (
-            <div style={{
-              background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`,
-              padding: '50px 28px', textAlign: 'center',
-            }}>
+            <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '50px 28px', textAlign: 'center' }}>
               <CheckCircle2 size={36} color={BORDER} style={{ marginBottom: 12 }} />
               <div style={{ fontSize: 13, fontWeight: 600, color: MUTED }}>No document reviewed yet</div>
               <div style={{ fontSize: 11, color: MUTED, marginTop: 6, lineHeight: 1.6, maxWidth: 300, margin: '8px auto 0' }}>
-                Upload a TXT document (or load the sample) and click <strong>Run MLR Review</strong>. The agent evaluates 8 compliance rules and generates a scored report with fix suggestions.
+                {mlrQueue.length > 0
+                  ? 'Click a submitted item above to load it for review, or upload a document manually.'
+                  : 'Submit content from Content Studio, or upload a document and click Run MLR Review.'}
               </div>
             </div>
           )}
 
+          {/* Running */}
           {anyLog && !hasResult && (
             <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '50px 28px', textAlign: 'center' }}>
               <Loader2 size={28} color={RED} style={{ animation: 'spin 1s linear infinite', marginBottom: 12 }} />
               <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>Review in progress…</div>
-              <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>Running 6-step compliance pipeline</div>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>Evaluating 18 compliance rules across M / L / R</div>
             </div>
           )}
 
+          {/* Results */}
           {hasResult && (() => {
-            const cs    = overrideCount > 0 ? adjustedStatus    : result.compliance_status;
-            const score = overrideCount > 0 ? adjustedScore     : result.score;
+            const cs    = overrideCount > 0 ? adjustedStatus : result.compliance_status;
+            const score = overrideCount > 0 ? adjustedScore  : result.score;
             const csCfg = COMPLIANCE_CFG[cs] || COMPLIANCE_CFG['Needs Review'];
             const sev   = result.severity_summary || {};
-
             return (
               <>
-                {/* Score + status header */}
-                <div style={{
-                  background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`,
-                  padding: '18px 22px', display: 'flex', gap: 20, alignItems: 'center',
-                }}>
+                {/* Score header */}
+                <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '18px 22px', display: 'flex', gap: 20, alignItems: 'center' }}>
                   <ScoreRing score={score} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '5px 14px', borderRadius: 99,
-                        background: csCfg.bg, color: csCfg.color,
-                        fontSize: 13, fontWeight: 800,
-                      }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 99, background: csCfg.bg, color: csCfg.color, fontSize: 13, fontWeight: 800 }}>
                         {csCfg.icon} {cs}
                       </span>
                       {overrideCount > 0 && (
-                        <span style={{ fontSize: 10, color: AMBER, fontWeight: 700, background: '#FFF8E6', padding: '2px 8px', borderRadius: 99 }}>
-                          {overrideCount} reviewer override(s) applied
+                        <span style={{ fontSize: 10, color: AMBER, fontWeight: 700, background: '#FFF8E6', padding: '2px 8px', borderRadius: 99 }}>{overrideCount} override(s)</span>
+                      )}
+                      {activeQueueId && queueItemStatus !== 'pending' && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, color: queueItemStatus === 'approved' ? GREEN : AMBER, background: queueItemStatus === 'approved' ? '#E8F7F0' : '#FFF8E6' }}>
+                          {queueItemStatus === 'approved' ? '✓ Accepted' : '↩ Sent Back'}
                         </span>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 14 }}>
-                      {[
-                        { label: 'High',   val: sev.high   || 0, color: RED   },
-                        { label: 'Medium', val: sev.medium || 0, color: AMBER },
-                        { label: 'Low',    val: sev.low    || 0, color: MUTED },
-                        { label: 'Passed', val: (result.passed_rules || []).length, color: GREEN },
-                      ].map(m => (
+                      {[{ label:'High', val:sev.high||0, color:RED }, { label:'Medium', val:sev.medium||0, color:AMBER }, { label:'Low', val:sev.low||0, color:MUTED }, { label:'Passed', val:(result.passed_rules||[]).length, color:GREEN }].map(m => (
                         <div key={m.label} style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 18, fontWeight: 800, color: m.color }}>{m.val}</div>
                           <div style={{ fontSize: 10, color: MUTED }}>{m.label}</div>
@@ -645,142 +806,143 @@ function MLRReviewTab() {
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: 10, color: MUTED, marginBottom: 3 }}>Document</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: INK, maxWidth: 180, lineHeight: 1.3 }}>
-                      {result.metadata?.title || fileName}
-                    </div>
-                    <div style={{ fontSize: 10, color: MUTED, marginTop: 4 }}>
-                      {result.metadata?.word_count?.toLocaleString()} words ·{' '}
-                      {result.metadata?.tone} · {result.metadata?.audience_type}
-                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: INK, maxWidth: 180, lineHeight: 1.3 }}>{result.metadata?.title || fileName}</div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 4 }}>{result.metadata?.tone} · {result.metadata?.audience_type}</div>
                   </div>
                 </div>
 
-                {/* Violations */}
-                {effectiveViolations.length > 0 && (
-                  <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-                    <div style={{ padding: '13px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <AlertTriangle size={14} color={RED} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Violations</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: RED, background: '#FFF3F2', padding: '2px 8px', borderRadius: 99 }}>
-                        {effectiveViolations.length}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {effectiveViolations.map((v, i) => (
-                        <div key={v.rule_id} style={{
-                          padding: '13px 18px',
-                          borderBottom: i < effectiveViolations.length - 1 ? `1px solid ${BORDER}` : 'none',
-                          background: i % 2 === 0 ? '#fff' : BG,
+                {/* M / L / R sub-tabs */}
+                <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+                  {/* Tab strip */}
+                  <div style={{ display: 'flex', borderBottom: `1px solid ${BORDER}` }}>
+                    {['M', 'L', 'R'].map(sec => {
+                      const cfg = SECTION_CFG[sec];
+                      const st  = secStatus(sec);
+                      const isActive = mlrSection === sec;
+                      const dotColor = st === 'high' ? RED : st === 'medium' ? AMBER : GREEN;
+                      return (
+                        <button key={sec} onClick={() => setMlrSection(sec)} style={{
+                          flex: 1, padding: '11px 16px', border: 'none', cursor: 'pointer',
+                          borderBottom: isActive ? `3px solid ${cfg.color}` : '3px solid transparent',
+                          background: isActive ? cfg.bg : '#fff',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                          transition: 'all 0.15s',
                         }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT, background: '#E0F2FE', padding: '1px 6px', borderRadius: 4 }}>
-                              {v.rule_id}
-                            </span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: INK, flex: 1 }}>{v.name}</span>
-                            <SeverityBadge severity={v.severity} />
-                            <button
-                              onClick={() => handleOverride(v.rule_id)}
-                              title="Reviewer override"
-                              style={{
-                                padding: '3px 10px', borderRadius: 99, border: `1px solid ${BORDER}`,
-                                background: overrides[v.rule_id] === 'override' ? GREEN : '#fff',
-                                color: overrides[v.rule_id] === 'override' ? '#fff' : MUTED,
-                                fontSize: 10, fontWeight: 700, cursor: 'pointer',
-                                transition: 'all 0.15s',
-                              }}
-                            >
-                              {overrides[v.rule_id] === 'override' ? '✓ Overridden' : 'Override'}
-                            </button>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: isActive ? cfg.color : MUTED }}>{sec}</div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: isActive ? cfg.color : MUTED }}>{cfg.label}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+                            <span style={{ fontSize: 9, color: dotColor, fontWeight: 700 }}>{st === 'pass' ? 'Pass' : st === 'high' ? 'Fail' : 'Warn'}</span>
                           </div>
-                          <div style={{ fontSize: 11, color: INK, marginBottom: 5, lineHeight: 1.5 }}>
-                            <strong style={{ color: RED }}>Violation:</strong> {v.message}
-                          </div>
-                          <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.5, marginBottom: feedback[v.rule_id] !== undefined ? 8 : 0 }}>
-                            <strong>Explanation:</strong> {v.explanation}
-                          </div>
-                          {feedback[v.rule_id] !== undefined && (
-                            <textarea
-                              value={feedback[v.rule_id]}
-                              onChange={e => setFeedback(prev => ({ ...prev, [v.rule_id]: e.target.value }))}
-                              placeholder="Add reviewer comment…"
-                              rows={2}
-                              style={{
-                                width: '100%', boxSizing: 'border-box',
-                                padding: '6px 10px', borderRadius: 7, border: `1px solid ${BORDER}`,
-                                fontSize: 11, color: INK, resize: 'vertical', marginTop: 2,
-                              }}
-                            />
-                          )}
-                          <button
-                            onClick={() => setFeedback(prev =>
-                              prev[v.rule_id] !== undefined
-                                ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== v.rule_id))
-                                : { ...prev, [v.rule_id]: '' }
-                            )}
-                            style={{
-                              marginTop: 6, padding: '3px 10px', borderRadius: 99,
-                              border: `1px solid ${BORDER}`, background: '#fff',
-                              color: MUTED, fontSize: 10, cursor: 'pointer',
-                            }}
-                          >
-                            {feedback[v.rule_id] !== undefined ? 'Hide comment' : '+ Add comment'}
-                          </button>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Section body */}
+                  <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                    {/* Violations */}
+                    {secViolations.length > 0 && (
+                      <div style={{ borderRadius: 10, border: `1px solid #FECACA`, overflow: 'hidden' }}>
+                        <div style={{ padding: '9px 14px', borderBottom: `1px solid #FECACA`, display: 'flex', alignItems: 'center', gap: 8, background: '#FFF3F2' }}>
+                          <AlertTriangle size={13} color={RED} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: RED }}>Violations</span>
+                          <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: RED, background: '#fff', padding: '1px 7px', borderRadius: 99 }}>{secViolations.length}</span>
                         </div>
-                      ))}
-                    </div>
+                        {secViolations.map((v, i) => (
+                          <div key={v.rule_id} style={{ padding: '12px 14px', borderBottom: i < secViolations.length - 1 ? `1px solid ${BORDER}` : 'none', background: i % 2 === 0 ? '#fff' : BG }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT, background: '#E0F2FE', padding: '1px 6px', borderRadius: 4 }}>{v.rule_id}</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: INK, flex: 1 }}>{v.name}</span>
+                              <SeverityBadge severity={v.severity} />
+                              <button onClick={() => handleOverride(v.rule_id)} style={{ padding: '2px 9px', borderRadius: 99, border: `1px solid ${BORDER}`, background: overrides[v.rule_id] === 'override' ? GREEN : '#fff', color: overrides[v.rule_id] === 'override' ? '#fff' : MUTED, fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
+                                {overrides[v.rule_id] === 'override' ? '✓ Overridden' : 'Override'}
+                              </button>
+                            </div>
+                            <div style={{ fontSize: 11, color: INK, marginBottom: 4, lineHeight: 1.5 }}><strong style={{ color: RED }}>Issue:</strong> {v.message}</div>
+                            <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.5 }}><strong>Context:</strong> {v.explanation}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Suggested fixes */}
+                    {secSuggestions.length > 0 && (
+                      <div style={{ borderRadius: 10, border: `1px solid #DDD6FE`, overflow: 'hidden' }}>
+                        <div style={{ padding: '9px 14px', borderBottom: `1px solid #DDD6FE`, display: 'flex', alignItems: 'center', gap: 8, background: '#F5F3FF' }}>
+                          <Sparkles size={13} color={VIOLET} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: VIOLET }}>Suggested Fixes</span>
+                        </div>
+                        {secSuggestions.map((s, i) => (
+                          <div key={s.rule_id} style={{ padding: '10px 14px', borderBottom: i < secSuggestions.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT, background: '#E0F2FE', padding: '1px 6px', borderRadius: 4 }}>{s.rule_id}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: INK }}>{s.name}</span>
+                              <SeverityBadge severity={s.severity} />
+                            </div>
+                            <div style={{ fontSize: 11, color: INK, lineHeight: 1.55, paddingLeft: 4 }}>{s.fix}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Passed */}
+                    {secPassed.length > 0 && (
+                      <div style={{ borderRadius: 10, border: `1px solid #A7F3D0`, overflow: 'hidden' }}>
+                        <div style={{ padding: '9px 14px', borderBottom: `1px solid #A7F3D0`, display: 'flex', alignItems: 'center', gap: 8, background: '#E8F7F0' }}>
+                          <CheckCircle2 size={13} color={GREEN} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: GREEN }}>Passed</span>
+                          <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: GREEN }}>{secPassed.length}</span>
+                        </div>
+                        <div style={{ padding: '10px 14px', display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                          {secPassed.map(r => (
+                            <span key={r.rule_id || r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 99, background: '#E8F7F0', color: GREEN, fontSize: 11, fontWeight: 600 }}>
+                              <CheckCircle2 size={10} /> {r.rule_id || r.id} {r.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {secViolations.length === 0 && secPassed.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '20px 0', color: MUTED, fontSize: 12 }}>No rules evaluated in this section.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Accept / Send Back — queue items only */}
+                {activeQueueId && queueItemStatus === 'pending' && (
+                  <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: INK }}>Reviewer Decision</div>
+                    {!showSendBack ? (
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button onClick={handleAccept} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', background: GREEN, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <CheckCircle2 size={14} /> Accept — Approved
+                        </button>
+                        <button onClick={() => setShowSendBack(true)} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1px solid ${AMBER}`, background: '#FFF8E6', color: AMBER, fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          ↩ Send Back for Revision
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <textarea value={sendBackReason} onChange={e => setSendBackReason(e.target.value)} placeholder="Describe what needs to be revised before re-submission…" rows={3} style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: `1px solid ${AMBER}`, fontSize: 11, color: INK, resize: 'vertical' }} />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={handleSendBack} disabled={!sendBackReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: sendBackReason.trim() ? AMBER : '#F6F9FC', color: sendBackReason.trim() ? '#fff' : MUTED, fontWeight: 700, fontSize: 12, cursor: sendBackReason.trim() ? 'pointer' : 'not-allowed' }}>↩ Confirm Send Back</button>
+                          <button onClick={() => setShowSendBack(false)} style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: MUTED, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Passed rules */}
-                {(result.passed_rules || []).length > 0 && (
-                  <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-                    <div style={{ padding: '13px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <CheckCircle2 size={14} color={GREEN} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Passed Rules</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: GREEN, background: '#E8F7F0', padding: '2px 8px', borderRadius: 99 }}>
-                        {result.passed_rules.length}
-                      </span>
-                    </div>
-                    <div style={{ padding: '10px 18px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {result.passed_rules.map(r => (
-                        <span key={r.rule_id} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          padding: '4px 10px', borderRadius: 99,
-                          background: '#E8F7F0', color: GREEN, fontSize: 11, fontWeight: 600,
-                        }}>
-                          <CheckCircle2 size={10} /> {r.rule_id} {r.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Suggestions */}
-                {(result.suggestions || []).length > 0 && (
-                  <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-                    <div style={{ padding: '13px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Sparkles size={14} color={VIOLET} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Suggested Fixes</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                      {result.suggestions.map((s, i) => (
-                        <div key={s.rule_id} style={{
-                          padding: '11px 18px',
-                          borderBottom: i < result.suggestions.length - 1 ? `1px solid ${BORDER}` : 'none',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT, background: '#E0F2FE', padding: '1px 6px', borderRadius: 4 }}>
-                              {s.rule_id}
-                            </span>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: INK }}>{s.name}</span>
-                            <SeverityBadge severity={s.severity} />
-                          </div>
-                          <div style={{ fontSize: 11, color: INK, lineHeight: 1.55, paddingLeft: 4 }}>
-                            {s.fix}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                {/* Decision badge */}
+                {activeQueueId && queueItemStatus !== 'pending' && (
+                  <div style={{ borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'flex-start', gap: 10, background: queueItemStatus === 'approved' ? '#E8F7F0' : '#FFF8E6', border: `1px solid ${queueItemStatus === 'approved' ? '#A7F3D0' : '#FDE68A'}` }}>
+                    {queueItemStatus === 'approved'
+                      ? <><CheckCircle2 size={16} color={GREEN} style={{ flexShrink: 0 }} /><span style={{ fontSize: 13, fontWeight: 700, color: GREEN }}>Content accepted — approved for distribution.</span></>
+                      : <><AlertTriangle size={16} color={AMBER} style={{ flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 700, color: AMBER }}>Sent back for revision</div>{activeQueueItem?.sendBackReason && <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>{activeQueueItem.sendBackReason}</div>}</div></>
+                    }
                   </div>
                 )}
               </>
@@ -788,7 +950,6 @@ function MLRReviewTab() {
           })()}
         </div>
       </div>
-    </div>
   );
 }
 
@@ -1626,9 +1787,6 @@ function AutoTaggingTab() {
               </div>
             )}
           </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1817,6 +1975,7 @@ function OverviewTab() {
         </div>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -1863,6 +2022,30 @@ with ≥1 weight-related comorbidity.
 See full Prescribing Information including Boxed Warning.[3]
 `;
 
+const MOCK_VARIATIONS = [
+  {
+    label: 'Variation A — Clinical Evidence Focus',
+    tone: 'Data-heavy, peer-to-peer',
+    wordCount: 148,
+    tags: ['efficacy-forward', 'STEP-1 citation', 'PI compliant'],
+    text: `WEGOVY® (semaglutide 2.4 mg) — Clinical Evidence Summary\n\nEFFICACY\nIn the STEP-1 trial (n=1,961), Wegovy achieved mean body weight reduction of 14.9% vs. 2.4% with placebo at 68 weeks (p<0.001).[1] 86.4% of patients achieved ≥5% weight loss.\n\nCARDIOVASCULAR OUTCOMES\nSUSTAIN-6 CVOT demonstrated 26% reduction in MACE in T2D patients at high CV risk (HR 0.74; 95% CI 0.58–0.95).[2]\n\nSAFETY\nContraindicated in personal/family history of MTC or MEN 2. Most common AEs (≥5%): nausea, diarrhea, vomiting, constipation.\n\nINDICATION\nAdjunct to reduced-calorie diet and physical activity for chronic weight management (BMI ≥30, or ≥27 with comorbidity).\n\nSee full Prescribing Information including Boxed Warning.[3]`,
+  },
+  {
+    label: 'Variation B — Concise Key Messages',
+    tone: 'Brief, action-oriented',
+    wordCount: 82,
+    tags: ['high-impact', 'headline-driven', 'rep leave-behind'],
+    text: `WEGOVY® (semaglutide 2.4 mg)\n\n3 REASONS TO CONSIDER WEGOVY\n\n✓ PROVEN WEIGHT LOSS — 14.9% average body weight reduction at 68 weeks (STEP-1)[1]\n✓ CV BENEFIT — 26% reduction in MACE events in at-risk T2D patients (SUSTAIN-6)[2]\n✓ ONCE WEEKLY — Subcutaneous injection, self-administered\n\nFor appropriate patients: BMI ≥30, or ≥27 with ≥1 weight-related comorbidity.\n\nISI: Contraindicated with personal/family history MTC/MEN 2. See full PI.[3]`,
+  },
+  {
+    label: 'Variation C — Mechanism & Differentiation',
+    tone: 'Scientific, class-context',
+    wordCount: 112,
+    tags: ['MOA-focused', 'differentiation', 'GLP-1 context'],
+    text: `WEGOVY® (semaglutide 2.4 mg) — Mechanism & Differentiation\n\nMECHANISM OF ACTION\nSemaglutide selectively activates GLP-1 receptors, reducing appetite and energy intake while slowing gastric emptying. The 2.4 mg dose is optimized specifically for weight management.\n\nDIFFERENTIATION\nWegovy delivers the highest weight reduction in its class: 14.9% vs. lifestyle alone (2.4%) in STEP-1.[1] Once-weekly dosing supports adherence with median on-treatment persistence of 12+ months in real-world cohorts.\n\nSAFETY PROFILE\nWell-characterized GI-related adverse events, transient in most patients. No new safety signals in post-marketing surveillance.\n\nSee full PI.[3]`,
+  },
+];
+
 function ContentStudioTab() {
   const [objective,    setObjective]   = useState('HCP Education');
   const [audience,     setAudience]    = useState('Endocrinology');
@@ -1870,9 +2053,23 @@ function ContentStudioTab() {
   const [sources,      setSources]     = useState([SOURCES_L[0], SOURCES_L[1]]);
   const [template,     setTemplate]    = useState('tpl-1');
   const [generating,   setGenerating]  = useState(false);
+  const [generationStep, setGenerationStep] = useState(null); // 'sourcing' | 'composing' | 'done'
   const [draftReady,   setDraftReady]  = useState(false);
   const [submitting,   setSubmitting]  = useState(false);
   const [submitted,    setSubmitted]   = useState(false);
+  const [selectedVar,  setSelectedVar] = useState(null);
+  const [modifyingVar, setModifyingVar] = useState(null);
+  const [varTexts,     setVarTexts]    = useState(MOCK_VARIATIONS.map(v => v.text));
+
+  // Map UI values → taxonomy tag keys for DB matching
+  const audienceTagMap = { 'Endocrinology': 'endocrinologist', 'PCP': 'pcp', 'Cardiology': 'cardiologist' };
+  const topicTagMap    = { 'Efficacy': 'efficacy', 'Safety': 'safety', 'Titration': 'titration',
+    'CV Outcomes': 'cv_outcomes', 'Adherence': 'adherence', 'Formulary/Access': 'access', 'MOA': 'moa' };
+  const audTag = audienceTagMap[audience] || audience.toLowerCase();
+  const topTag = topicTagMap[topic] || topic.toLowerCase();
+  const matchedSources = CONTENT_DB.filter(d =>
+    (d.tags.audience || []).includes(audTag) || (d.tags.topic || []).includes(topTag)
+  ).slice(0, 4);
 
   function toggleSource(s) {
     setSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -1881,13 +2078,44 @@ function ContentStudioTab() {
     setGenerating(true);
     setDraftReady(false);
     setSubmitted(false);
-    setTimeout(() => { setGenerating(false); setDraftReady(true); }, 1600);
+    setSelectedVar(null);
+    setModifyingVar(null);
+    setGenerationStep('sourcing');
+    setTimeout(() => setGenerationStep('composing'), 1400);
+    setTimeout(() => {
+      setGenerating(false);
+      setDraftReady(true);
+      setGenerationStep('done');
+      setVarTexts(MOCK_VARIATIONS.map(v => v.text));
+    }, 2800);
   }
   function handleSubmit() {
     setSubmitting(true);
-    setTimeout(() => { setSubmitting(false); setSubmitted(true); }, 1200);
+    setTimeout(() => {
+      setSubmitting(false);
+      setSubmitted(true);
+      // Push to cross-tab MLR queue
+      const varIdx = selectedVar;
+      const varLabel = ['A', 'B', 'C'][varIdx];
+      const tpl = TEMPLATES.find(t => t.id === template);
+      pushMLRItem({
+        id: 'MLR-2481',
+        variation: varLabel,
+        label: MOCK_VARIATIONS[varIdx].label,
+        title: `${tpl?.label || 'Content'} — ${objective} (Var ${varLabel})`,
+        content: varTexts[varIdx],
+        wordCount: MOCK_VARIATIONS[varIdx].wordCount,
+        tone: MOCK_VARIATIONS[varIdx].tone,
+        audience: audience,
+        objective: objective,
+        topic: topic,
+        submittedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        status: 'pending',
+      });
+    }, 1200);
   }
 
+  const canSubmit = draftReady && selectedVar !== null;
   const complianceChecks = [
     { label: 'Fair balance included',     pass: draftReady },
     { label: 'AE disclosures present',    pass: draftReady },
@@ -1898,7 +2126,9 @@ function ContentStudioTab() {
 
   return (
     <div style={{ padding:'20px 28px', display:'flex', flexDirection:'column', gap:18 }}>
-      {/* Insight banner */}
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes cs-pulse{0%,100%{opacity:1}50%{opacity:.35}}`}</style>
+
+      {/* ── Insight banner ── */}
       <div style={{
         background: 'linear-gradient(135deg, #E0F2FE 0%, #F0F9FF 100%)',
         border:`1px solid #BAE6FD`, borderRadius:10, padding:'12px 18px',
@@ -1908,21 +2138,22 @@ function ContentStudioTab() {
         <div>
           <div style={{ fontSize:12, fontWeight:700, color: ACCENT, marginBottom:3 }}>Content Co-Pilot Agent</div>
           <div style={{ fontSize:12, color: INK, lineHeight:1.6 }}>
-            You can generate a compliant HCP leave-behind in under 2 minutes using existing approved sources.
-            Reusing pre-approved modules reduces MLR cycle time by <strong>60%</strong> — select templates from the approved library.
+            Generate compliant HCP content in under 2 minutes by pulling from the <strong>{CONTENT_DB_STATS.total}-asset</strong> approved archive.
+            The agent surfaces matching tagged sources, then produces <strong>3 differentiated variations</strong> — pick the one that fits, modify if needed, then send directly to MLR.
           </div>
         </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1.1fr 0.85fr', gap:18 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1.45fr 0.85fr', gap:18, alignItems:'start' }}>
 
-        {/* ── Draft Generator ── */}
+        {/* ── LEFT: Draft Generator ── */}
         <div style={{ background:'#fff', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden' }}>
           <div style={{ padding:'13px 16px', borderBottom:`1px solid ${BORDER}`, display:'flex', alignItems:'center', gap:8 }}>
             <Zap size={13} color={ACCENT} />
             <span style={{ fontSize:13, fontWeight:700, color: INK }}>AI Draft Generator</span>
           </div>
           <div style={{ padding:'14px 16px', display:'flex', flexDirection:'column', gap:12 }}>
+
             {/* Objective */}
             <div>
               <label style={{ fontSize:11, fontWeight:600, color: MUTED, display:'block', marginBottom:4 }}>Objective</label>
@@ -1933,6 +2164,7 @@ function ContentStudioTab() {
                 {OBJECTIVES.map(o => <option key={o}>{o}</option>)}
               </select>
             </div>
+
             {/* Audience */}
             <div>
               <label style={{ fontSize:11, fontWeight:600, color: MUTED, display:'block', marginBottom:4 }}>Audience</label>
@@ -1948,6 +2180,7 @@ function ContentStudioTab() {
                 ))}
               </div>
             </div>
+
             {/* Topic */}
             <div>
               <label style={{ fontSize:11, fontWeight:600, color: MUTED, display:'block', marginBottom:4 }}>Topic</label>
@@ -1958,21 +2191,37 @@ function ContentStudioTab() {
                 {TOPICS_L.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
+
+            {/* Template */}
+            <div>
+              <label style={{ fontSize:11, fontWeight:600, color: MUTED, display:'block', marginBottom:6 }}>Template</label>
+              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                {TEMPLATES.map(t => (
+                  <button key={t.id} onClick={() => setTemplate(t.id)} style={{
+                    padding:'6px 10px', borderRadius:7,
+                    border:`1px solid ${template === t.id ? ACCENT : BORDER}`,
+                    background: template === t.id ? '#E0F2FE' : '#fff',
+                    textAlign:'left', cursor:'pointer',
+                    display:'flex', alignItems:'center', gap:7,
+                  }}>
+                    <span style={{ fontSize:13 }}>{t.icon}</span>
+                    <span style={{ fontSize:10, fontWeight:700, color: template === t.id ? ACCENT : INK }}>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Sources */}
             <div>
               <label style={{ fontSize:11, fontWeight:600, color: MUTED, display:'block', marginBottom:6 }}>Approved Sources</label>
               {SOURCES_L.map(s => (
                 <label key={s} style={{ display:'flex', alignItems:'center', gap:7, marginBottom:5, cursor:'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={sources.includes(s)}
-                    onChange={() => toggleSource(s)}
-                    style={{ accentColor: ACCENT }}
-                  />
+                  <input type="checkbox" checked={sources.includes(s)} onChange={() => toggleSource(s)} style={{ accentColor: ACCENT }} />
                   <span style={{ fontSize:11, color: INK }}>{s}</span>
                 </label>
               ))}
             </div>
+
             <button onClick={handleGenerate} disabled={generating} style={{
               marginTop:4, padding:'9px 0', borderRadius:8, border:'none',
               background: generating ? '#BAE6FD' : ACCENT, color:'#fff',
@@ -1981,60 +2230,188 @@ function ContentStudioTab() {
               transition:'background 0.2s',
             }}>
               {generating
-                ? <><span style={{ animation:'cs-pulse 1s ease-in-out infinite' }}>●</span> Generating…</>
-                : <><Zap size={14}/> Generate Draft</>}
+                ? <><Loader2 size={14} style={{ animation:'spin 1s linear infinite' }} /> Generating…</>
+                : <><Zap size={14} /> Generate Draft</>}
             </button>
           </div>
         </div>
 
-        {/* ── Assembly Canvas ── */}
+        {/* ── MIDDLE: Assembly Canvas / Variations ── */}
         <div style={{ background:'#fff', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden', display:'flex', flexDirection:'column' }}>
           <div style={{ padding:'13px 16px', borderBottom:`1px solid ${BORDER}`, display:'flex', alignItems:'center', gap:8 }}>
             <BookOpen size={13} color={ACCENT} />
-            <span style={{ fontSize:13, fontWeight:700, color: INK }}>Assembly Canvas</span>
-            <span style={{ marginLeft:'auto', fontSize:10, color: MUTED }}>Select template · Preview draft</span>
+            <span style={{ fontSize:13, fontWeight:700, color: INK }}>
+              {draftReady ? '3 Content Variations' : 'Assembly Canvas'}
+            </span>
+            {draftReady && selectedVar !== null && (
+              <span style={{ marginLeft:'auto', fontSize:10, fontWeight:700, color: GREEN, background:'#E8F7F0', padding:'2px 8px', borderRadius:99 }}>
+                Variation {['A','B','C'][selectedVar]} selected
+              </span>
+            )}
+            {!draftReady && !generating && (
+              <span style={{ marginLeft:'auto', fontSize:10, color: MUTED }}>Configure left → Generate</span>
+            )}
           </div>
-          {/* Template picker */}
-          <div style={{ padding:'12px 16px', borderBottom:`1px solid ${BORDER}` }}>
-            <div style={{ fontSize:11, color: MUTED, fontWeight:600, marginBottom:8 }}>Template</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:7 }}>
-              {TEMPLATES.map(t => (
-                <button key={t.id} onClick={() => setTemplate(t.id)} style={{
-                  padding:'8px 10px', borderRadius:8, border:`1px solid`,
-                  borderColor: template === t.id ? ACCENT : BORDER,
-                  background: template === t.id ? '#E0F2FE' : '#fff',
-                  textAlign:'left', cursor:'pointer',
-                }}>
-                  
-                  <div style={{ fontSize:10, fontWeight:700, color: template === t.id ? ACCENT : INK, lineHeight:1.3 }}>{t.label}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* Live preview */}
-          <div style={{ flex:1, padding:'12px 16px', overflow:'hidden', display:'flex', flexDirection:'column' }}>
-            <div style={{ fontSize:11, color: MUTED, fontWeight:600, marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
-              <Eye size={11} /> Draft Preview
-            </div>
-            <div style={{
-              flex:1, borderRadius:8, border:`1px solid ${BORDER}`,
-              background: BG, padding:'10px 12px',
-              fontSize:10, color: draftReady ? INK : MUTED,
-              fontFamily:'monospace', lineHeight:1.65,
-              overflowY:'auto', maxHeight:260,
-              whiteSpace:'pre-wrap',
-            }}>
-              {generating
-                ? <span style={{ animation:'cs-pulse 1s ease-in-out infinite', color: ACCENT }}>● Generating draft…</span>
-                : draftReady
-                  ? MOCK_DRAFT
-                  : 'Configure objective, audience, and topic — then click Generate Draft to assemble a compliance-ready draft using approved source modules.'}
-            </div>
+
+          <div style={{ flex:1, padding:'14px 16px', overflowY:'auto' }}>
+
+            {/* Idle */}
+            {!generating && !draftReady && (
+              <div style={{ textAlign:'center', padding:'36px 20px', color: MUTED }}>
+                <Zap size={28} color={BORDER} style={{ marginBottom:12 }} />
+                <div style={{ fontSize:13, fontWeight:600 }}>No content generated yet</div>
+                <div style={{ fontSize:11, marginTop:6, lineHeight:1.6, maxWidth:260, margin:'8px auto 0' }}>
+                  Configure objective, audience, and topic — then click <strong>Generate Draft</strong> to produce 3 variations from the approved archive.
+                </div>
+              </div>
+            )}
+
+            {/* Sourcing from DB */}
+            {generating && generationStep === 'sourcing' && (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:8, background:'#F0F9FF', border:`1px solid #BAE6FD` }}>
+                  <Loader2 size={15} color={ACCENT} style={{ animation:'spin 1s linear infinite', flexShrink:0 }} />
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:700, color: ACCENT }}>Sourcing from Content Archive…</div>
+                    <div style={{ fontSize:10, color: MUTED, marginTop:2 }}>
+                      Searching <strong>{CONTENT_DB_STATS.total}</strong> tagged assets · audience: <strong>{audience}</strong> · topic: <strong>{topic}</strong>
+                    </div>
+                  </div>
+                </div>
+                {(matchedSources.length > 0 ? matchedSources : CONTENT_DB.slice(0, 3)).map((doc, idx) => (
+                  <div key={doc.id} style={{
+                    display:'flex', alignItems:'center', gap:10,
+                    padding:'8px 12px', borderRadius:8,
+                    background: idx < 2 ? '#E8F7F0' : '#F6F9FC',
+                    border:`1px solid ${idx < 2 ? '#A7F3D0' : BORDER}`,
+                  }}>
+                    <span style={{ fontSize:18, flexShrink:0 }}>{doc.icon}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:10, fontWeight:700, color: INK, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{doc.filename}</div>
+                      <div style={{ fontSize:10, color: MUTED }}>{doc.type} · {(doc.tags.audience || []).join(', ')}</div>
+                    </div>
+                    {idx < 2
+                      ? <CheckCircle2 size={13} color={GREEN} style={{ flexShrink:0 }} />
+                      : <Clock size={12} color={MUTED} style={{ flexShrink:0 }} />}
+                  </div>
+                ))}
+                <div style={{ fontSize:10, color: MUTED, textAlign:'center', marginTop:4 }}>
+                  {matchedSources.length || 3} matching assets found · extracting approved modules…
+                </div>
+              </div>
+            )}
+
+            {/* Composing */}
+            {generating && generationStep === 'composing' && (
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:14, padding:'36px 20px' }}>
+                <Loader2 size={28} color={ACCENT} style={{ animation:'spin 1s linear infinite' }} />
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:13, fontWeight:700, color: INK, marginBottom:6 }}>Composing 3 content variations…</div>
+                  <div style={{ fontSize:11, color: MUTED, lineHeight:1.7 }}>
+                    Applying tone differentiation · mapping compliance modules<br />
+                    Injecting citations · validating against PI
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:8 }}>
+                  {['A — Clinical', 'B — Concise', 'C — MOA'].map((v, i) => (
+                    <span key={v} style={{
+                      fontSize:10, fontWeight:700, padding:'3px 10px', borderRadius:99,
+                      background:'#E0F2FE', color: ACCENT,
+                      animation:'cs-pulse 1s ease-in-out infinite',
+                      animationDelay: i * 0.25 + 's',
+                    }}>{v}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 3 Variations */}
+            {draftReady && generationStep === 'done' && (
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                {MOCK_VARIATIONS.map((v, idx) => {
+                  const isSelected  = selectedVar === idx;
+                  const isModifying = modifyingVar === idx;
+                  const varLabel    = ['A', 'B', 'C'][idx];
+                  return (
+                    <div key={idx} style={{
+                      borderRadius:10, border:`2px solid ${isSelected ? ACCENT : BORDER}`,
+                      background: isSelected ? '#F0F9FF' : '#fff',
+                      overflow:'hidden', transition:'all 0.15s',
+                    }}>
+
+                      {/* Header */}
+                      <div style={{
+                        padding:'10px 14px', display:'flex', alignItems:'flex-start', gap:10,
+                        background: isSelected ? '#E0F2FE' : BG,
+                        borderBottom:`1px solid ${isSelected ? '#BAE6FD' : BORDER}`,
+                      }}>
+                        <span style={{
+                          width:22, height:22, borderRadius:6, flexShrink:0,
+                          background: isSelected ? ACCENT : '#CBD5E1', color:'#fff',
+                          fontWeight:800, fontSize:11,
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                        }}>{varLabel}</span>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontSize:12, fontWeight:700, color: isSelected ? ACCENT : INK }}>{v.label}</div>
+                          <div style={{ fontSize:10, color: MUTED, marginTop:1 }}>{v.tone} · {v.wordCount} words</div>
+                        </div>
+                        <div style={{ display:'flex', gap:5, flexShrink:0 }}>
+                          <button onClick={() => setModifyingVar(isModifying ? null : idx)} style={{
+                            padding:'3px 9px', borderRadius:6, fontSize:10, fontWeight:700,
+                            border:`1px solid ${BORDER}`,
+                            background: isModifying ? '#FFF8E6' : '#fff',
+                            color: isModifying ? AMBER : MUTED, cursor:'pointer',
+                          }}>✎ Modify</button>
+                          <button onClick={() => { setSelectedVar(idx); setModifyingVar(null); }} style={{
+                            padding:'3px 12px', borderRadius:6, fontSize:10, fontWeight:700,
+                            border:`1px solid ${isSelected ? ACCENT : BORDER}`,
+                            background: isSelected ? ACCENT : '#fff',
+                            color: isSelected ? '#fff' : MUTED,
+                            cursor:'pointer', transition:'all 0.15s',
+                          }}>{isSelected ? '✓ Selected' : 'Select'}</button>
+                        </div>
+                      </div>
+
+                      {/* Tag chips */}
+                      <div style={{ padding:'7px 14px', display:'flex', gap:5, flexWrap:'wrap', borderBottom:`1px solid ${BORDER}` }}>
+                        {v.tags.map(t => (
+                          <span key={t} style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:99, background:'#E0F2FE', color: ACCENT }}>{t}</span>
+                        ))}
+                      </div>
+
+                      {/* Content area */}
+                      {isModifying ? (
+                        <textarea
+                          value={varTexts[idx]}
+                          onChange={e => { const n = [...varTexts]; n[idx] = e.target.value; setVarTexts(n); }}
+                          style={{
+                            width:'100%', boxSizing:'border-box', padding:'10px 14px',
+                            border:'none', outline:'none', fontSize:10, color: INK,
+                            lineHeight:1.65, fontFamily:'monospace', resize:'vertical',
+                            minHeight:130, background:'#FFFBEB',
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          padding:'10px 14px', fontSize:10, color: INK,
+                          lineHeight:1.65, fontFamily:'monospace', whiteSpace:'pre-wrap',
+                          maxHeight:110, overflow:'hidden', position:'relative',
+                        }}>
+                          {varTexts[idx].slice(0, 260)}
+                          {varTexts[idx].length > 260 && <span style={{ color: MUTED }}>…</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ── Compliance + Citations ── */}
+        {/* ── RIGHT: Compliance + Citations ── */}
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+
           {/* Compliance panel */}
           <div style={{ background:'#fff', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden' }}>
             <div style={{ padding:'13px 16px', borderBottom:`1px solid ${BORDER}`, display:'flex', alignItems:'center', gap:8 }}>
@@ -2053,27 +2430,37 @@ function ContentStudioTab() {
                       ? <CheckCircle2 size={10} color={GREEN} />
                       : <div style={{ width:6, height:6, borderRadius:'50%', background: BORDER }} />}
                   </div>
-                  <span style={{ fontSize:11, color: c.pass ? INK : MUTED, fontWeight: c.pass ? 600 : 400 }}>
-                    {c.label}
-                  </span>
+                  <span style={{ fontSize:11, color: c.pass ? INK : MUTED, fontWeight: c.pass ? 600 : 400 }}>{c.label}</span>
                 </div>
               ))}
-              <button
-                onClick={handleSubmit}
-                disabled={!draftReady || submitting || submitted}
-                style={{
-                  marginTop:8, padding:'8px 0', borderRadius:8, border:'none',
-                  background: submitted ? '#E8F7F0' : !draftReady ? '#F6F9FC' : GREEN,
-                  color: submitted ? GREEN : !draftReady ? MUTED : '#fff',
-                  fontWeight:700, fontSize:12, cursor: !draftReady || submitting || submitted ? 'not-allowed' : 'pointer',
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                }}>
+
+              {draftReady && selectedVar === null && (
+                <div style={{ marginTop:4, padding:'7px 10px', borderRadius:7, background:'#FFF8E6', border:`1px solid #FDE68A`, fontSize:10, color: AMBER, fontWeight:600 }}>
+                  ← Select a variation to submit
+                </div>
+              )}
+
+              <button onClick={handleSubmit} disabled={!canSubmit || submitting || submitted} style={{
+                marginTop:8, padding:'8px 0', borderRadius:8, border:'none',
+                background: submitted ? '#E8F7F0' : !canSubmit ? '#F6F9FC' : GREEN,
+                color: submitted ? GREEN : !canSubmit ? MUTED : '#fff',
+                fontWeight:700, fontSize:12,
+                cursor: !canSubmit || submitting || submitted ? 'not-allowed' : 'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+              }}>
                 {submitted
-                  ? <><CheckCircle2 size={13} /> Submitted to MLR</>
+                  ? <><CheckCircle2 size={13} /> Sent to MLR</>
                   : submitting
-                    ? <>● Submitting…</>
-                    : <><Send size={13} /> Submit to MLR</>}
+                    ? <><Loader2 size={13} style={{ animation:'spin 1s linear infinite' }} /> Submitting…</>
+                    : <><Send size={13} /> Submit to MLR{selectedVar !== null ? ` (Var ${['A','B','C'][selectedVar]})` : ''}</>}
               </button>
+
+              {submitted && (
+                <div style={{ padding:'8px 10px', borderRadius:7, background:'#E8F7F0', border:`1px solid #A7F3D0`, fontSize:10, color: GREEN, fontWeight:600, textAlign:'center', lineHeight:1.5 }}>
+                  ✓ Variation {['A','B','C'][selectedVar]} sent to MLR Review<br />
+                  <span style={{ fontWeight:400, color: MUTED }}>Ticket #MLR-2481 created</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2086,12 +2473,7 @@ function ContentStudioTab() {
             <div style={{ padding:'10px 16px', display:'flex', flexDirection:'column', gap:8 }}>
               {CITATIONS.map((c, i) => (
                 <div key={i} style={{ display:'flex', gap:7, alignItems:'flex-start' }}>
-                  <span style={{
-                    fontSize:10, fontWeight:700, color: ACCENT,
-                    background:'#E0F2FE', padding:'1px 5px', borderRadius:4, flexShrink:0,
-                  }}>
-                    {c.ref}
-                  </span>
+                  <span style={{ fontSize:10, fontWeight:700, color: ACCENT, background:'#E0F2FE', padding:'1px 5px', borderRadius:4, flexShrink:0 }}>{c.ref}</span>
                   <span style={{ fontSize:10, color: MUTED, lineHeight:1.5 }}>{c.text}</span>
                 </div>
               ))}
