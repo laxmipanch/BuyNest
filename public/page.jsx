@@ -950,8 +950,7 @@ function MLRReviewTab() {
           })()}
         </div>
       </div>
-  );
-}
+          };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2 — Auto-Tagging
@@ -2648,6 +2647,7 @@ function PerformanceTab() {
             </div>
           </div>
         </div>
+        </div>
 
         {/* ── Right column ── */}
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -2725,6 +2725,332 @@ function PerformanceTab() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TAB 5 — Content Engagement
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ENG_KPI = [
+  { label: 'Total Impressions', value: '284,120', delta: '+12%',  up: true,  accent: ACCENT },
+  { label: 'Total Clicks',      value: '41,380',  delta: '+8%',   up: true,  accent: GREEN  },
+  { label: 'Avg Engagement',    value: '4 min 22s',delta: '+18%', up: true,  accent: VIOLET },
+  { label: 'CTA Conv. Rate',    value: '14.6%',   delta: '-1.2%', up: false, accent: AMBER  },
+];
+
+const ENG_CHANNELS = [
+  { channel: 'Rep Portal',    impressions: 112400, clicks: 18200, ctr: 16.2, avgTime: '5:08', color: ACCENT  },
+  { channel: 'Email (HCP)',   impressions:  84600, clicks: 11340, ctr: 13.4, avgTime: '3:41', color: GREEN   },
+  { channel: 'Web / MSL Hub', impressions:  53800, clicks:  7620, ctr: 14.2, avgTime: '4:55', color: VIOLET  },
+  { channel: 'Event / Conf.', impressions:  33320, clicks:  4220, ctr: 12.7, avgTime: '2:50', color: AMBER   },
+];
+
+const ENG_CTA = [
+  { cta: 'Request Sample',         impressions: 58400, clicks: 9840, ctr: 16.8, conversions: 2820, cvr: 28.7, trend: [9,11,14,16,17,16,17] },
+  { cta: 'Download PI',            impressions: 71200, clicks: 8960, ctr: 12.6, conversions: 8960, cvr:100.0, trend: [7,8,9,10,9,9,9]  },
+  { cta: 'Schedule Follow-up',     impressions: 43600, clicks: 6200, ctr: 14.2, conversions: 1820, cvr: 29.4, trend: [4,5,5,6,7,6,6]  },
+  { cta: 'Access Patient Support', impressions: 36800, clicks: 4980, ctr: 13.5, conversions: 1490, cvr: 29.9, trend: [3,4,4,5,5,5,5]  },
+  { cta: 'View Full ISI',          impressions: 74120, clicks: 11400, ctr: 15.4, conversions: 11400, cvr:100.0, trend: [8,9,10,11,11,11,11] },
+];
+
+const ENG_ASSETS = [
+  { id:'DOC-001', name:'Wegovy STEP-1 Leave-Behind v3.1', type:'Leave-Behind', audience:'Endocrinology', views:28400, clicks:5120, engRate:18.0, avgTime:'5:22', ctr:18.0, change:'+14%', up:true  },
+  { id:'DOC-004', name:'Wegovy MOA Detail Aid v4.0',      type:'Detail Aid',   audience:'PCP',          views:21600, clicks:3240, engRate:15.0, avgTime:'6:10', ctr:15.0, change:'+9%',  up:true  },
+  { id:'DOC-003', name:'SUSTAIN-6 CV Outcomes Email',     type:'Email',        audience:'Endocrinology',views:18900, clicks:2520, engRate:13.3, avgTime:'3:48', ctr:13.3, change:'+21%', up:true  },
+  { id:'DOC-002', name:'Titration Quick Card v2.3',       type:'Quick Ref',    audience:'PCP',          views:16200, clicks:1940, engRate:12.0, avgTime:'2:30', ctr:12.0, change:'-3%',  up:false },
+  { id:'DOC-005', name:'Safety & Tolerability Snapshot',  type:'Leave-Behind', audience:'PCP',          views:14800, clicks:1640, engRate:11.1, avgTime:'3:02', ctr:11.1, change:'+5%',  up:true  },
+  { id:'DOC-006', name:'Patient Adherence Guide v1.2',    type:'Patient Guide',audience:'PCP',          views:12400, clicks:1340, engRate:10.8, avgTime:'4:18', ctr:10.8, change:'+2%',  up:true  },
+];
+
+const ENG_AUDIENCE = [
+  { seg:'Endocrinology', views:124800, clicks:19600, engRate:15.7, avgTime:'5:10', color: ACCENT  },
+  { seg:'PCP',           views: 98400, clicks:13200, engRate:13.4, avgTime:'3:54', color: GREEN   },
+  { seg:'Cardiology',    views: 60920, clicks: 8580, engRate:14.1, avgTime:'4:28', color: VIOLET  },
+];
+
+const ENG_WEEKLY = [
+  { week:'Mar 31', impressions:36200, clicks:5100 },
+  { week:'Apr 7',  impressions:38400, clicks:5480 },
+  { week:'Apr 14', impressions:41200, clicks:6020 },
+  { week:'Apr 21', impressions:44800, clicks:6640 },
+  { week:'Apr 28', impressions:43100, clicks:6340 },
+  { week:'May 5',  impressions:46800, clicks:7020 },
+  { week:'May 12', impressions:33620, clicks:4780 },
+];
+
+function MiniSparkline({ data, color = ACCENT }) {
+  const max = Math.max(...data);
+  const w = 48, h = 22;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - (v / max) * h;
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg width={w} height={h} style={{ overflow:'visible' }}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={pts.split(' ').pop().split(',')[0]} cy={pts.split(' ').pop().split(',')[1]} r={3} fill={color} />
+    </svg>
+  );
+}
+
+function ContentEngagementTab() {
+  const [assetSort, setAssetSort] = useState('views');
+  const [channelHover, setChannelHover] = useState(null);
+
+  const maxImp = Math.max(...ENG_CHANNELS.map(c => c.impressions));
+
+  const sortedAssets = [...ENG_ASSETS].sort((a, b) => b[assetSort] - a[assetSort]);
+
+  return (
+    <div style={{ padding: '20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Agent insight */}
+      <AgentInsightPanel
+        endpoint="/content-strategy/agent-insight"
+        screenId="content-strategy-engagement"
+        accentColor={ACCENT}
+        insightOnly={true}
+      />
+
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        {ENG_KPI.map(k => (
+          <div key={k.label} style={{
+            background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`,
+            padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <span style={{ fontSize: 11, color: MUTED, fontWeight: 600 }}>{k.label}</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: INK, lineHeight: 1 }}>{k.value}</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700,
+              color: k.up ? GREEN : RED,
+              display: 'flex', alignItems: 'center', gap: 3,
+            }}>
+              {k.up ? '▲' : '▼'} {k.delta} vs last period
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Impressions + clicks over time & channel breakdown */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 20 }}>
+
+        {/* Weekly trend */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrendingUp size={14} color={ACCENT} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Weekly Impressions & Clicks</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: MUTED }}>Last 7 weeks</span>
+          </div>
+          <div style={{ padding: '16px 18px 12px' }}>
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={ENG_WEEKLY} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="engImpGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={ACCENT} stopOpacity={0.18} />
+                    <stop offset="95%" stopColor={ACCENT} stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="engClkGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={GREEN} stopOpacity={0.22} />
+                    <stop offset="95%" stopColor={GREEN} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="week" tick={{ fontSize: 10, fill: MUTED }} tickLine={false} axisLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  formatter={(v, name) => [v.toLocaleString(), name === 'impressions' ? 'Impressions' : 'Clicks']}
+                  contentStyle={{ fontSize: 11, borderRadius: 8, border: `1px solid ${BORDER}` }}
+                />
+                <Area type="monotone" dataKey="impressions" stroke={ACCENT} strokeWidth={2} fill="url(#engImpGrad)" dot={false} />
+                <Area type="monotone" dataKey="clicks"      stroke={GREEN}  strokeWidth={2} fill="url(#engClkGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div style={{ display: 'flex', gap: 16, marginTop: 4, paddingLeft: 4 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: MUTED }}>
+                <span style={{ width: 10, height: 3, borderRadius: 2, background: ACCENT, display: 'inline-block' }} />
+                Impressions
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: MUTED }}>
+                <span style={{ width: 10, height: 3, borderRadius: 2, background: GREEN, display: 'inline-block' }} />
+                Clicks
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Channel breakdown */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <BarChart2 size={14} color={VIOLET} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Engagement by Channel</span>
+          </div>
+          <div style={{ padding: '12px 0' }}>
+            {ENG_CHANNELS.map(c => (
+              <div
+                key={c.channel}
+                onMouseEnter={() => setChannelHover(c.channel)}
+                onMouseLeave={() => setChannelHover(null)}
+                style={{
+                  padding: '9px 18px', cursor: 'default',
+                  background: channelHover === c.channel ? '#F8FAFC' : 'transparent',
+                  transition: 'background 0.15s',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: INK }}>{c.channel}</span>
+                  <span style={{ fontSize: 11, color: MUTED }}>CTR {c.ctr}% · ⏱ {c.avgTime}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 6, borderRadius: 99, background: BORDER, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 99,
+                      width: `${(c.impressions / maxImp) * 100}%`,
+                      background: c.color, transition: 'width 0.4s',
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: c.color, minWidth: 52, textAlign: 'right' }}>
+                    {(c.impressions / 1000).toFixed(1)}k
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* CTA Performance + Audience breakdown */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20 }}>
+
+        {/* CTA table */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MousePointer2 size={14} color={ACCENT} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>CTA Performance</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: MUTED }}>Click-through & conversion rates</span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  {['CTA', 'Impressions', 'Clicks', 'CTR', 'Conv.', 'CVR', 'Trend'].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', textAlign: h === 'CTA' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: MUTED, whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ENG_CTA.map((row, i) => (
+                  <tr key={i} style={{ borderBottom: i < ENG_CTA.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                    <td style={{ padding: '10px 14px', fontWeight: 600, color: INK }}>{row.cta}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', color: MUTED }}>{row.impressions.toLocaleString()}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', color: INK, fontWeight: 600 }}>{row.clicks.toLocaleString()}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', color: ACCENT, fontWeight: 700 }}>{row.ctr}%</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', color: MUTED }}>{row.conversions.toLocaleString()}</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', color: GREEN, fontWeight: 700 }}>{row.cvr}%</td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                      <MiniSparkline data={row.trend} color={ACCENT} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Audience breakdown */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Users size={14} color={GREEN} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Engagement by Audience</span>
+          </div>
+          <div style={{ padding: '12px 0' }}>
+            {ENG_AUDIENCE.map(a => {
+              const maxViews = Math.max(...ENG_AUDIENCE.map(x => x.views));
+              return (
+                <div key={a.seg} style={{ padding: '10px 18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>{a.seg}</span>
+                    <span style={{ fontSize: 11, color: MUTED }}>Eng. rate {a.engRate}%</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ flex: 1, height: 7, borderRadius: 99, background: BORDER, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: 99, width: `${(a.views / maxViews) * 100}%`, background: a.color }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, marginTop: 2 }}>
+                    <span style={{ fontSize: 10, color: MUTED }}>👁 {(a.views / 1000).toFixed(1)}k views</span>
+                    <span style={{ fontSize: 10, color: MUTED }}>🖱 {(a.clicks / 1000).toFixed(1)}k clicks</span>
+                    <span style={{ fontSize: 10, color: MUTED }}>⏱ {a.avgTime} avg</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ borderTop: `1px solid ${BORDER}`, padding: '12px 18px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: INK, marginBottom: 6 }}>Insight</div>
+            <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.6 }}>
+              Endocrinology HCPs drive the highest engagement rate (15.7%) and longest average read time. PCP assets have the broadest reach but lower depth of engagement — consider shorter, punchier formats for this segment.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Top engaged assets table */}
+      <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FileText size={14} color={ACCENT} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Top Engaged Content</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            {['views','clicks','engRate','avgTime'].map(col => (
+              <button
+                key={col}
+                onClick={() => setAssetSort(col)}
+                style={{
+                  padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                  border: assetSort === col ? 'none' : `1px solid ${BORDER}`,
+                  background: assetSort === col ? ACCENT : '#fff',
+                  color: assetSort === col ? '#fff' : MUTED,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {col === 'engRate' ? 'Eng. Rate' : col === 'avgTime' ? 'Avg Time' : col.charAt(0).toUpperCase() + col.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                {['Asset', 'Type', 'Audience', 'Views', 'Clicks', 'Eng. Rate', 'Avg Time', 'Change'].map(h => (
+                  <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Asset' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: MUTED, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedAssets.map((a, i) => (
+                <tr key={a.id} style={{ borderBottom: i < sortedAssets.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                  <td style={{ padding: '10px 14px', fontWeight: 600, color: INK, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 99, background: '#F0F4FF', color: ACCENT, fontSize: 10, fontWeight: 700 }}>{a.type}</span>
+                  </td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right' }}><AudChip aud={a.audience} /></td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: assetSort==='views'?700:400, color: assetSort==='views'?ACCENT:INK }}>{a.views.toLocaleString()}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: assetSort==='clicks'?700:400, color: assetSort==='clicks'?ACCENT:INK }}>{a.clicks.toLocaleString()}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: assetSort==='engRate'?700:400, color: assetSort==='engRate'?GREEN:INK }}>{a.engRate}%</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: assetSort==='avgTime'?700:400, color: assetSort==='avgTime'?VIOLET:MUTED }}>{a.avgTime}</td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: a.up ? GREEN : RED }}>{a.up ? '▲' : '▼'} {a.change}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Root page component
 // ─────────────────────────────────────────────────────────────────────────────
 const TABS = [
@@ -2732,6 +3058,7 @@ const TABS = [
   { id: 'auto-tagging', label: 'Auto-Tagging' },
   { id: 'overview',     label: 'Overview' },
   { id: 'studio',       label: 'Content Studio' },
+  { id: 'engagement',   label: 'Content Engagement' },
   { id: 'performance',  label: 'Performance & Optimization' },
 ];
 
@@ -2754,6 +3081,7 @@ export default function ContentStrategyPage() {
         {tab === 'auto-tagging' && <AutoTaggingTab />}
         {tab === 'overview'     && <OverviewTab />}
         {tab === 'studio'       && <ContentStudioTab />}
+        {tab === 'engagement'   && <ContentEngagementTab />}
         {tab === 'performance'  && <PerformanceTab />}
       </div>
       <ChatFAB endpoint="/content-strategy/ask" screenId="content-strategy" accentColor={ACCENT} />
