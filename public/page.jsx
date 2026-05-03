@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 import {
   FileText, Zap, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown,
   Minus, BookOpen, Tag, BarChart2, RefreshCw, Archive, ArrowUpRight,
   ClipboardList, Send, Eye, Clock, Download, Upload, Loader2,
   ChevronRight, Sparkles, Info, Filter,
+  Users, MousePointer2, Shield, Lock, Layers, Search, Globe,
+  GitBranch, CheckSquare, XCircle, BookMarked, Link2,
 } from 'lucide-react';
 import api from '@/lib/axiosClient';
 import { isLoggedIn, clearAuth } from '@/lib/auth';
@@ -219,6 +221,150 @@ function ScreenHeader({ persona, tab, setTab, tabs, greeting }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Module-level cross-tab navigation
+// ─────────────────────────────────────────────────────────────────────────────
+let _tabNav = null;
+function setGlobalTab(id) { if (_tabNav) _tabNav(id); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline + Nuanced Problems constants (used by OverviewTab)
+// ─────────────────────────────────────────────────────────────────────────────
+const PIPELINE_STEPS = [
+  { n:1,  phase:'Intake',     label:'Intake &\nClassification',    tabId:'auto-tagging',    Icon:Upload,       phaseColor:ACCENT,   count:'14',   unit:'pending',      status:'active' },
+  { n:2,  phase:'Intake',     label:'AI Tagging &\nEnrichment',    tabId:'auto-tagging',    Icon:Tag,          phaseColor:ACCENT,   count:'142',  unit:'tagged',       status:'active' },
+  { n:3,  phase:'Discovery',  label:'Semantic\nDiscovery',         tabId:'knowledge-graph', Icon:GitBranch,    phaseColor:VIOLET,   count:'847',  unit:'claim nodes',  status:'active' },
+  { n:4,  phase:'Creation',   label:'Modular\nAssembly',           tabId:'studio',          Icon:Layers,       phaseColor:GREEN,    count:'6',    unit:'templates',    status:'active' },
+  { n:5,  phase:'Creation',   label:'Draft\nGeneration',           tabId:'studio',          Icon:FileText,     phaseColor:GREEN,    count:'3',    unit:'in draft',     status:'active' },
+  { n:6,  phase:'Review',     label:'MLR Review\nM→L→R→Brand',    tabId:'mlr-review',      Icon:Shield,       phaseColor:RED,      count:'7',    unit:'in review',    status:'active' },
+  { n:7,  phase:'Governance', label:'Approval &\nVersion Lock',   tabId:'governance',      Icon:Lock,         phaseColor:AMBER,    count:'12',   unit:'approved',     status:'active' },
+  { n:8,  phase:'Governance', label:'Distribution\nOrchestration',tabId:'governance',      Icon:Send,         phaseColor:AMBER,    count:'31',   unit:'distributed',  status:'active' },
+  { n:9,  phase:'Analytics',  label:'Engagement &\nAttribution',  tabId:'engagement',      Icon:BarChart2,    phaseColor:'#0891B2',count:'284k', unit:'impressions',  status:'active' },
+  { n:10, phase:'Analytics',  label:'Performance\nOptimization',  tabId:'performance',     Icon:TrendingUp,   phaseColor:'#0891B2',count:'8',    unit:'A/B tests',    status:'active' },
+  { n:11, phase:'Lifecycle',  label:'Retiral\nManagement',        tabId:'governance',      Icon:Archive,      phaseColor:'#64748B',count:'3',    unit:'expiring',     status:'warn'   },
+  { n:12, phase:'Lifecycle',  label:'Citation\nSurveillance',     tabId:'governance',      Icon:AlertTriangle,phaseColor:'#DC2626',count:'2',    unit:'flagged',      status:'alert'  },
+];
+
+const NUANCED_PROBLEMS = [
+  {
+    id:'A', title:'Approved Content Black Hole',
+    stat:'47% of field content is ghost content — created locally, never MLR-submitted.',
+    problem:'Reps can\'t find approved materials for specific HCP objections. Search relies on filename conventions, not semantic understanding.',
+    solution:'Semantic Knowledge Graph with BioBERT embeddings enables natural-language queries across approved claims, indications, and payer scenarios.',
+    badge:'Knowledge Graph', badgeTab:'knowledge-graph', color:VIOLET,
+  },
+  {
+    id:'B', title:'Modular Content Paradox',
+    stat:'Re-assembly of approved modules triggers full MLR review every time.',
+    problem:'Companies either pre-approve every possible combination (impossible) or wait weeks for trivial re-arrangements, defeating the promise of modularity.',
+    solution:'Compositional Rules Engine validates module combinations against pre-approved templates. AI detects claim drift; 80% of combinations bypass full MLR.',
+    badge:'Content Studio', badgeTab:'studio', color:GREEN,
+  },
+  {
+    id:'C', title:'MLR Throughput Bottleneck',
+    stat:'200–300 content requests/quarter overwhelm shared M/L/R reviewers.',
+    problem:'Critical field tools (PA letters, formulary objection handlers) sit in queue 3–4 weeks. By approval time the competitive landscape has shifted.',
+    solution:'AI Pre-Review Agent trained on 5 years of MLR feedback routes 60% of content to expedited review — cutting average cycle from 18 to 6 days.',
+    badge:'MLR Review', badgeTab:'mlr-review', color:RED,
+  },
+  {
+    id:'D', title:'Engagement Measurement Mirage',
+    stat:'Companies track downloads & opens — not outcome-linked engagement.',
+    problem:'Content teams can\'t connect content usage to formulary wins or time-to-first-Rx. High-download content may be used with low-value HCPs.',
+    solution:'Closed-Loop Attribution joins content analytics with CRM call activity, Rx data (IQVIA), and payer data using propensity score matching.',
+    badge:'Content Engagement', badgeTab:'engagement', color:ACCENT,
+  },
+  {
+    id:'E', title:'Cross-Channel Compliance Drift',
+    stat:'Rep content copied into patient channels without re-review creates violations.',
+    problem:'Each channel has different compliance rules. Patient materials can\'t include efficacy claims without fair balance — but teams copy-paste without re-review.',
+    solution:'Channel Compliance Adapter fine-tuned on MLR-approved (rep ↔ patient) content pairs. Rewrites for channel constraints in 15 min vs. 4 hours manually.',
+    badge:'Governance', badgeTab:'governance', color:AMBER,
+  },
+  {
+    id:'F', title:'Reference Citation Decay',
+    stat:'Approved content cites studies that later get updated or retracted.',
+    problem:'Reps unknowingly present materials citing superseded data. No systematic way to track when cited references are contradicted by new evidence.',
+    solution:'Citation Surveillance Agent monitors PubMed, ClinicalTrials.gov, and FDA safety alerts weekly. Auto-generates recall tasks when cited studies are updated.',
+    badge:'Lifecycle', badgeTab:'governance', color:'#DC2626',
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Knowledge Graph constants
+// ─────────────────────────────────────────────────────────────────────────────
+const KG_SAMPLE_SEARCHES = [
+  { q:'endocrinologists addressing Aetna step therapy for second-line obesity', results:4 },
+  { q:'efficacy claims with STEP-1 citation approved for HCP leave-behinds', results:7 },
+  { q:'boxed warning content approved for PCP audience', results:3 },
+];
+
+const KG_CLAIMS = [
+  { id:'CLM-001', text:'Mean body weight reduction of 14.9% at 68 weeks vs. 2.4% placebo (p<0.001)', study:'STEP-1 (Wilding 2021)', channel:'HCP', assets:['CA-001','CA-009'], mlrDate:'Jan 2025', status:'active' },
+  { id:'CLM-002', text:'26% reduction in MACE in patients with T2D at high CV risk (HR 0.74; 95% CI 0.58–0.95)', study:'SUSTAIN-6 (Marso 2016)', channel:'HCP / Cardiology', assets:['CA-003','CA-010'], mlrDate:'Dec 2024', status:'active' },
+  { id:'CLM-003', text:'Semaglutide selectively activates GLP-1 receptors in the hypothalamus and brainstem', study:'PI Section 12.1', channel:'HCP / All', assets:['CA-004'], mlrDate:'Oct 2024', status:'active' },
+  { id:'CLM-004', text:'Most common adverse reactions (≥5%): nausea (44%), diarrhea (31%), vomiting (24%)', study:'Wegovy PI 2023', channel:'All', assets:['CA-005','CA-001'], mlrDate:'Sep 2024', status:'active' },
+  { id:'CLM-005', text:'57% of patients achieved ≥10% body weight reduction at 68 weeks', study:'STEP-1 (Wilding 2021)', channel:'HCP', assets:['CA-001'], mlrDate:'Jan 2025', status:'active' },
+];
+
+const KG_NODES = [
+  { id:'c1', type:'claim',    x:200, y:155, label:'14.9% Wt Loss',    sub:'STEP-1',       color:'#F59E0B' },
+  { id:'c2', type:'claim',    x:195, y:265, label:'HR 0.74 MACE',     sub:'SUSTAIN-6',    color:'#F59E0B' },
+  { id:'s1', type:'study',    x: 65, y: 60, label:'STEP-1 2021',      sub:'Wilding',      color:ACCENT    },
+  { id:'s2', type:'study',    x:330, y: 55, label:'STEP-2 2021',      sub:'Davies',       color:ACCENT    },
+  { id:'s3', type:'study',    x:355, y:200, label:'SUSTAIN-6',        sub:'Marso 2016',   color:ACCENT    },
+  { id:'a1', type:'asset',    x: 55, y:185, label:'STEP-1\nLeave-Behind',sub:'CA-001',    color:GREEN     },
+  { id:'a2', type:'asset',    x: 70, y:295, label:'MOA\nDetail Aid',  sub:'CA-004',       color:GREEN     },
+  { id:'a3', type:'asset',    x:230, y:345, label:'CV Outcomes\nEmail',sub:'CA-003',      color:GREEN     },
+  { id:'m1', type:'approval', x:350, y:315, label:'MLR Approved',     sub:'Jan 2025',     color:RED       },
+  { id:'m2', type:'approval', x: 55, y:355, label:'MLR Approved',     sub:'Oct 2024',     color:RED       },
+];
+const KG_EDGES = [
+  ['s1','c1'],['s2','c1'],['c1','a1'],['c1','a2'],['a1','m1'],
+  ['s3','c2'],['c2','a3'],['a3','m1'],['a2','m2'],
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Governance constants
+// ─────────────────────────────────────────────────────────────────────────────
+const GOV_APPROVALS = [
+  { id:'APR-0841', name:'Cardiology CME Slide Deck v0.1',     audience:'Cardiology', stage:'Medical',    reviewer:'Dr. K. Patel',  days:2,  status:'pending_sig' },
+  { id:'APR-0839', name:'Adherence Email 12-Week Check-In',   audience:'Endo',       stage:'Legal',      reviewer:'J. Romano, JD', days:5,  status:'in_review'   },
+  { id:'APR-0836', name:'Comorbidity Management Guide v0.2',  audience:'Cardiology', stage:'Regulatory', reviewer:'FDA Desk',       days:8,  status:'in_review'   },
+  { id:'APR-0831', name:'STEP-1 Leave-Behind v3.2 (refresh)', audience:'Endo',       stage:'Brand',      reviewer:'C. Walsh',      days:1,  status:'pending_sig' },
+  { id:'APR-0828', name:'PCP Formulary Q2 Update',            audience:'PCP',        stage:'Approved',   reviewer:'—',             days:0,  status:'approved'    },
+  { id:'APR-0822', name:'Patient Injection Guide (Spanish)',   audience:'Patient',    stage:'Approved',   reviewer:'—',             days:0,  status:'approved'    },
+];
+
+const GOV_DIST_CHANNELS = [
+  { channel:'Veeva CRM',       icon:Globe,       assets:28, lastSync:'2 hours ago',  status:'synced', color:ACCENT  },
+  { channel:'Rep Portal',      icon:Download,    assets:31, lastSync:'4 hours ago',  status:'synced', color:GREEN   },
+  { channel:'Field Devices',   icon:Send,        assets:24, lastSync:'Yesterday',    status:'synced', color:VIOLET  },
+  { channel:'Patient Hub',     icon:Users,       assets:9,  lastSync:'3 days ago',   status:'stale',  color:AMBER   },
+  { channel:'Congress Booth',  icon:Layers,      assets:6,  lastSync:'Apr 14, 2026', status:'stale',  color:MUTED   },
+];
+
+const GOV_RETIRING = [
+  { id:'CA-018', name:'Old Dosing Protocol Leave-Behind',  expires:'May 15, 2026', reason:'Superseded by v2.0',        daysLeft:16, severity:'high'   },
+  { id:'CA-007', name:'PCP Intro: GLP-1 Class Overview',  expires:'Jun 1, 2026',  reason:'Annual refresh required',   daysLeft:33, severity:'medium' },
+  { id:'CA-012', name:'Dosing Flexibility Email v2.5',     expires:'Jun 30, 2026', reason:'New titration data pending',daysLeft:62, severity:'low'    },
+];
+
+const GOV_CITATIONS = [
+  {
+    id:'CIT-001', claimId:'CLM-001', content:'STEP-1 Leave-Behind v3.1',
+    citation:'Wilding JPH et al. NEJM 2021;384:989-1002',
+    flag:'New subgroup analysis (STEP-1 extension) published Apr 2026 — confirms primary endpoint but adds 2-year durability data.',
+    action:'Review for update opportunity', severity:'info',
+  },
+  {
+    id:'CIT-002', claimId:'CLM-002', content:'CV Outcomes Email v1.5',
+    citation:'Marso SP et al. NEJM 2016;375:1834-1844',
+    flag:'FDA updated GLP-1 class label Apr 22, 2026 — added heart failure indication. May require claim refresh.',
+    action:'Mandatory review within 30 days', severity:'high',
+  },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1 — MLR Review
@@ -950,7 +1096,9 @@ function MLRReviewTab() {
           })()}
         </div>
       </div>
-          };
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2 — Auto-Tagging
@@ -1044,7 +1192,7 @@ const TAXONOMY_META = [
   },
 ];
 
-const PIPELINE_STEPS = [
+const TAGGING_STEPS = [
   { key: 'preprocessing', label: 'Processing the document' },
   { key: 'understanding', label: 'Understanding document' },
   { key: 'scoring',       label: 'Calculating signals' },
@@ -1205,7 +1353,7 @@ function AutoTaggingTab() {
     setRunning(true);
     setResult(null);
     setError('');
-    setLogs(Object.fromEntries(PIPELINE_STEPS.map(s => [s.key, { status: 'pending', message: '' }])));
+    setLogs(Object.fromEntries(TAGGING_STEPS.map(s => [s.key, { status: 'pending', message: '' }])));
 
     try {
       const token   = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -1649,7 +1797,7 @@ function AutoTaggingTab() {
                     {!running && hasResult && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: GREEN, background: '#E8F7F0', padding: '2px 8px', borderRadius: 99 }}>COMPLETE</span>}
                   </div>
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {PIPELINE_STEPS.map(step => <StepRow key={step.key} step={step} logEntry={logs[step.key]} />)}
+                    {TAGGING_STEPS.map(step => <StepRow key={step.key} step={step} logEntry={logs[step.key]} />)}
                   </div>
                 </div>
               )}
@@ -1786,6 +1934,7 @@ function AutoTaggingTab() {
               </div>
             )}
           </div>
+    </div>
   );
 }
 
@@ -1793,21 +1942,14 @@ function AutoTaggingTab() {
 // TAB 2 — Overview  (was TAB 1 before Auto-Tagging was added)
 // ─────────────────────────────────────────────────────────────────────────────
 function OverviewTab() {
-  const topAssets = [...APPROVED].sort((a, b) => b.rx_lift - a.rx_lift).slice(0, 6);
-  const alerts = APPROVED.filter(a => !a.tagged || a.rx_lift < 4 || (a.downloads > 200 && a.rx_lift < 4));
-
-  const barData = topAssets.map(a => ({
-    name: a.name.length > 24 ? a.name.slice(0, 22) + '…' : a.name,
-    rx_lift: a.rx_lift,
-    audience: a.audience,
-  }));
-
-  const BARCOLORS = topAssets.map(a =>
-    AUD_CFG[a.audience]?.color || ACCENT
-  );
+  const statusDot = (s) => {
+    if (s === 'alert') return { color: RED,   label: 'Alert'  };
+    if (s === 'warn')  return { color: AMBER, label: 'Warn'   };
+    return               { color: GREEN,  label: 'Active' };
+  };
 
   return (
-    <div style={{ padding:'20px 28px', display:'flex', flexDirection:'column', gap:20 }}>
+    <div style={{ padding: '20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Agent insight */}
       <AgentInsightPanel
@@ -1817,163 +1959,131 @@ function OverviewTab() {
         insightOnly={true}
       />
 
-      {/* KPI strip */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
-        <MetricCard label="Total Assets"      value={TOTAL_ASSETS}          unit=""     accent={ACCENT} />
-        <MetricCard label="Avg Rx Lift"       value={`${AVG_RX_LIFT}%`}     unit=""     accent={GREEN}  />
-        <MetricCard label="Avg Asset Reuse"   value={`${REUSE_RATE}×`}      unit=""     accent={VIOLET} />
-        <MetricCard label="Auto-Tag Accuracy" value={`${AUTO_TAG_ACC}%`}    unit=""     accent={AMBER}  />
+      {/* Pipeline — 12 steps */}
+      <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <GitBranch size={15} color={ACCENT} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Content Lifecycle Pipeline</span>
+          <span style={{ fontSize: 11, color: MUTED, marginLeft: 4 }}>End-to-end — 12 stages</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: MUTED }}>Click any step to navigate</span>
+        </div>
+        <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
+          {PIPELINE_STEPS.map((step, idx) => {
+            const dot = statusDot(step.status);
+            const Icon = step.Icon;
+            return (
+              <div
+                key={step.n}
+                onClick={() => setGlobalTab(step.tabId)}
+                style={{
+                  borderRadius: 10, border: `1.5px solid ${step.status === 'alert' ? RED : step.status === 'warn' ? AMBER : BORDER}`,
+                  padding: '11px 13px', cursor: 'pointer', background: step.status === 'alert' ? '#FFF8F8' : step.status === 'warn' ? '#FFFBF0' : '#FAFCFF',
+                  display: 'flex', flexDirection: 'column', gap: 7,
+                  transition: 'box-shadow 0.15s',
+                  position: 'relative',
+                }}
+              >
+                {/* Step number + phase */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 800, color: '#fff', background: step.phaseColor,
+                    borderRadius: 99, padding: '1px 6px', letterSpacing: 0.3,
+                  }}>{step.n}</span>
+                  <span style={{
+                    width: 7, height: 7, borderRadius: '50%', background: dot.color, flexShrink: 0,
+                  }} />
+                </div>
+                {/* Icon + label */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+                  <Icon size={13} color={step.phaseColor} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: INK, lineHeight: 1.35 }}>
+                    {step.label.split('\n').map((ln, i) => <span key={i} style={{ display: 'block' }}>{ln}</span>)}
+                  </span>
+                </div>
+                {/* Count */}
+                <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: step.phaseColor }}>{step.count}</span>
+                  <span style={{ fontSize: 9, color: MUTED }}>{step.unit}</span>
+                </div>
+                {/* Row divider after step 6 */}
+                {idx === 5 && (
+                  <div style={{
+                    position: 'absolute', bottom: -16, left: 0, right: 0, height: 1,
+                    background: BORDER,
+                  }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {/* Phase legend */}
+        <div style={{ padding: '10px 20px', borderTop: `1px solid ${BORDER}`, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {[
+            { phase:'Intake', color:ACCENT }, { phase:'Discovery', color:VIOLET },
+            { phase:'Creation', color:GREEN }, { phase:'Review', color:RED },
+            { phase:'Governance', color:AMBER }, { phase:'Analytics', color:'#0891B2' },
+            { phase:'Lifecycle', color:'#64748B' },
+          ].map(p => (
+            <span key={p.phase} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: MUTED, fontWeight: 600 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, display: 'inline-block' }} />
+              {p.phase}
+            </span>
+          ))}
+        </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:20 }}>
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        <MetricCard label="Total Assets"      value={TOTAL_ASSETS}       unit=""  accent={ACCENT} />
+        <MetricCard label="Avg Rx Lift"       value={`${AVG_RX_LIFT}%`}  unit=""  accent={GREEN}  />
+        <MetricCard label="Avg Asset Reuse"   value={`${REUSE_RATE}×`}   unit=""  accent={VIOLET} />
+        <MetricCard label="Auto-Tag Accuracy" value={`${AUTO_TAG_ACC}%`} unit=""  accent={AMBER}  />
+      </div>
 
-        {/* Top performing content */}
-        <div style={{
-          background:'#fff', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden',
-        }}>
-          <div style={{
-            padding:'14px 18px', borderBottom:`1px solid ${BORDER}`,
-            display:'flex', alignItems:'center', gap:8,
-          }}>
-            <TrendingUp size={14} color={GREEN} />
-            <span style={{ fontSize:13, fontWeight:700, color: INK }}>Top Performing Content</span>
-            <span style={{ marginLeft:'auto', fontSize:11, color: MUTED }}>Ranked by Rx lift</span>
-          </div>
-          <div style={{ padding:'8px 0' }}>
-            {topAssets.map((a, i) => (
-              <div key={a.id} style={{
-                display:'flex', alignItems:'center', gap:12,
-                padding:'9px 18px', borderBottom: i < topAssets.length - 1 ? `1px solid ${BORDER}` : 'none',
-              }}>
-                <div style={{
-                  width:24, height:24, borderRadius:'50%',
-                  background: i < 3 ? ACCENT : '#E6EDF3',
-                  color: i < 3 ? '#fff' : MUTED,
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize:11, fontWeight:700, flexShrink:0,
-                }}>
-                  {i + 1}
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:600, color: INK, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                    {a.name}
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
-                    <AudChip aud={a.audience} />
-                    <span style={{ fontSize:10, color: MUTED }}>{a.type}</span>
-                  </div>
-                </div>
-                <div style={{ textAlign:'right', flexShrink:0 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color: GREEN }}>{a.rx_lift}%</div>
-                  <div style={{ fontSize:10, color: MUTED }}>Rx lift</div>
+      {/* Nuanced Problems — 6 cards */}
+      <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <AlertTriangle size={14} color={AMBER} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>6 Nuanced Challenges — How ADEPT Solves Them</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
+          {NUANCED_PROBLEMS.map((p, i) => (
+            <div key={p.id} style={{
+              padding: '16px 18px',
+              borderRight: (i % 3 !== 2) ? `1px solid ${BORDER}` : 'none',
+              borderBottom: i < 3 ? `1px solid ${BORDER}` : 'none',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                <span style={{
+                  minWidth: 22, height: 22, borderRadius: 6, background: p.color, color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800, flexShrink: 0,
+                }}>{p.id}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: INK }}>{p.title}</div>
+                  <div style={{ fontSize: 10, color: p.color, fontWeight: 600, marginTop: 2 }}>{p.stat}</div>
                 </div>
               </div>
-            ))}
-          </div>
-          {/* Mini chart */}
-          <div style={{ padding:'12px 18px 16px', borderTop:`1px solid ${BORDER}` }}>
-            <div style={{ fontSize:11, color: MUTED, marginBottom:8, fontWeight:600 }}>Rx Lift by Asset (top 6)</div>
-            <ResponsiveContainer width="100%" height={100}>
-              <BarChart data={barData} barCategoryGap="25%">
-                <XAxis dataKey="name" tick={{ fontSize: 9, fill: MUTED }} tickLine={false} axisLine={false} />
-                <YAxis hide domain={[0, 'dataMax + 4']} />
-                <Tooltip
-                  formatter={(v) => [`${v}%`, 'Rx Lift']}
-                  contentStyle={{ fontSize:11, borderRadius:8, border:`1px solid ${BORDER}` }}
-                />
-                <Bar dataKey="rx_lift" radius={[4,4,0,0]}>
-                  {barData.map((_, i) => <Cell key={i} fill={BARCOLORS[i]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Right column: gaps + alerts */}
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-
-          {/* Content gaps */}
-          <div style={{
-            background:'#fff', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden', flex:1,
-          }}>
-            <div style={{
-              padding:'14px 18px', borderBottom:`1px solid ${BORDER}`,
-              display:'flex', alignItems:'center', gap:8,
-            }}>
-              <Tag size={14} color={AMBER} />
-              <span style={{ fontSize:13, fontWeight:700, color: INK }}>Content Gaps</span>
-              <span style={{
-                marginLeft:'auto', padding:'2px 8px', borderRadius:99,
-                background:'#FFF8E6', color: AMBER, fontSize:11, fontWeight:700,
-              }}>
-                {GAPS.length} missing
-              </span>
+              <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.5, marginBottom: 8 }}>{p.problem}</div>
+              <div style={{ fontSize: 11, color: INK, lineHeight: 1.5, background: '#F8FAFC', borderRadius: 7, padding: '8px 10px', borderLeft: `3px solid ${p.color}` }}>
+                <span style={{ fontWeight: 700, color: p.color }}>Solution: </span>{p.solution}
+              </div>
+              <button
+                onClick={() => setGlobalTab(p.badgeTab)}
+                style={{
+                  marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 99, border: `1px solid ${p.color}`,
+                  background: 'transparent', color: p.color, fontSize: 10, fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {p.badge} →
+              </button>
             </div>
-            <div style={{ padding:'10px 18px', display:'flex', flexDirection:'column', gap:8, maxHeight:220, overflowY:'auto' }}>
-              {GAPS.map((g, i) => (
-                <div key={i} style={{
-                  display:'flex', alignItems:'center', gap:8,
-                  padding:'7px 10px', borderRadius:8, background: BG,
-                  border:`1px solid ${BORDER}`,
-                }}>
-                  <AlertTriangle size={11} color={AMBER} style={{ flexShrink:0 }} />
-                  <AudChip aud={g.audience} />
-                  <span style={{ fontSize:11, color: INK, fontWeight:500 }}>{g.topic}</span>
-                  <span style={{ marginLeft:'auto', fontSize:10, color: MUTED }}>No assets</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Alerts */}
-          <div style={{
-            background:'#fff', borderRadius:12, border:`1px solid ${BORDER}`, overflow:'hidden',
-          }}>
-            <div style={{
-              padding:'12px 18px', borderBottom:`1px solid ${BORDER}`,
-              display:'flex', alignItems:'center', gap:8,
-            }}>
-              <AlertTriangle size={14} color={RED} />
-              <span style={{ fontSize:13, fontWeight:700, color: INK }}>Alerts</span>
-              <span style={{
-                marginLeft:'auto', padding:'2px 8px', borderRadius:99,
-                background:'#FFF3F2', color: RED, fontSize:11, fontWeight:700,
-              }}>
-                {alerts.length} items
-              </span>
-            </div>
-            <div style={{ padding:'8px 18px 12px', display:'flex', flexDirection:'column', gap:6 }}>
-              {alerts.slice(0, 4).map((a, i) => (
-                <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
-                  <div style={{
-                    width:6, height:6, borderRadius:'50%', marginTop:5, flexShrink:0,
-                    background: !a.tagged ? AMBER : a.rx_lift < 4 ? RED : MUTED,
-                  }} />
-                  <div>
-                    <div style={{ fontSize:11, fontWeight:600, color: INK }}>{a.name}</div>
-                    <div style={{ fontSize:10, color: MUTED }}>
-                      {!a.tagged ? 'Not auto-tagged — poor discoverability' :
-                       (a.downloads > 200 && a.rx_lift < 4) ? `High usage (${a.downloads} downloads) but only ${a.rx_lift}% Rx lift` :
-                       `Low Rx lift: ${a.rx_lift}% — review for refresh`}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {/* MLR pending */}
-              {ASSETS.filter(a => a.status === 'pending_mlr').map((a, i) => (
-                <div key={`mlr-${i}`} style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
-                  <div style={{ width:6, height:6, borderRadius:'50%', marginTop:5, flexShrink:0, background: AMBER }} />
-                  <div>
-                    <div style={{ fontSize:11, fontWeight:600, color: INK }}>{a.name}</div>
-                    <div style={{ fontSize:10, color: MUTED }}>Pending MLR review — not yet available for field use</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
       </div>
-    </div>
+
     </div>
   );
 }
@@ -2720,7 +2830,6 @@ function PerformanceTab() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
 
@@ -3051,22 +3160,459 @@ function ContentEngagementTab() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TAB 6 — Knowledge Graph (Semantic Discovery)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function KGGraphViz() {
+  const NodeR = { claim: 26, study: 20, asset: 18, approval: 16 };
+  const typeLabel = { claim: 'Claim', study: 'Study', asset: 'Asset', approval: 'MLR' };
+  const typeColor = { claim: '#F59E0B', study: ACCENT, asset: GREEN, approval: RED };
+  return (
+    <svg width="100%" viewBox="0 0 430 400" style={{ display: 'block' }}>
+      {/* Edges */}
+      {KG_EDGES.map(([a, b]) => {
+        const na = KG_NODES.find(n => n.id === a);
+        const nb = KG_NODES.find(n => n.id === b);
+        if (!na || !nb) return null;
+        return (
+          <line key={a + b}
+            x1={na.x} y1={na.y} x2={nb.x} y2={nb.y}
+            stroke={BORDER} strokeWidth={1.5} strokeDasharray="4 3"
+          />
+        );
+      })}
+      {/* Nodes */}
+      {KG_NODES.map(n => {
+        const r = NodeR[n.type] || 18;
+        const c = typeColor[n.type] || ACCENT;
+        return (
+          <g key={n.id}>
+            <circle cx={n.x} cy={n.y} r={r} fill={c} fillOpacity={0.12} stroke={c} strokeWidth={1.8} />
+            {n.label.split('\n').map((ln, i, arr) => (
+              <text key={i} x={n.x} y={n.y + (i - (arr.length - 1) / 2) * 11 + 3}
+                textAnchor="middle" fontSize={8.5} fill={c} fontWeight={700}>{ln}</text>
+            ))}
+            <text x={n.x} y={n.y + r + 11} textAnchor="middle" fontSize={8} fill={MUTED}>{n.sub}</text>
+          </g>
+        );
+      })}
+      {/* Legend */}
+      {Object.entries(typeColor).map(([type, color], i) => (
+        <g key={type} transform={`translate(${10 + i * 90}, 388)`}>
+          <circle cx={6} cy={0} r={5} fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1.5} />
+          <text x={14} y={4} fontSize={9} fill={MUTED} fontWeight={600}>{typeLabel[type]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function KnowledgeGraphTab() {
+  const [activeClaimIdx, setActiveClaimIdx] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searched, setSearched] = useState(false);
+  const activeClaim = KG_CLAIMS[activeClaimIdx];
+
+  function handleSearch() { if (searchQuery.trim()) setSearched(true); }
+
+  const KG_KPI = [
+    { label: 'Claim Nodes',         value: '847',  accent: '#F59E0B' },
+    { label: 'Study Links',         value: '312',  accent: ACCENT    },
+    { label: 'Pre-Approved Combos', value: '28',   accent: GREEN     },
+    { label: 'Cross-Brand Matches', value: '94',   accent: VIOLET    },
+  ];
+
+  const USE_CASES = [
+    {
+      icon: BookMarked, color: '#F59E0B',
+      title: 'Claim Provenance & Reusability',
+      body: 'Each approved claim is a graph node linked to supporting studies, MLR approval date, approved channels, and every asset using that claim. When drafting, AI suggests 6 pre-approved wordings with the same semantic intent.',
+    },
+    {
+      icon: Link2, color: RED,
+      title: 'Impact Propagation for Updates',
+      body: 'When a study is updated or a safety alert is issued, the graph instantly identifies all downstream assets citing it. System auto-generates a recall list: "12 rep guides, 4 patient brochures require review."',
+    },
+    {
+      icon: Users, color: VIOLET,
+      title: 'Personalized Content Assembly',
+      body: 'Graph encodes HCP attributes (specialty, prescribing behavior, payer mix) against content effectiveness. AI recommends the optimal asset for each HCP: "For Dr. Martinez (endo, Medicare-heavy), use Medicare coverage guide — 87% success rate."',
+    },
+  ];
+
+  return (
+    <div style={{ padding: '20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Agent insight */}
+      <AgentInsightPanel
+        endpoint="/content-strategy/agent-insight"
+        screenId="content-strategy-knowledge-graph"
+        accentColor={VIOLET}
+        insightOnly={true}
+      />
+
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        {KG_KPI.map(k => (
+          <div key={k.label} style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <span style={{ fontSize: 11, color: MUTED, fontWeight: 600 }}>{k.label}</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: k.accent }}>{k.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Semantic search + graph */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 20 }}>
+
+        {/* Search panel */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Search size={14} color={VIOLET} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Semantic Claim Search</span>
+          </div>
+          {/* Search input */}
+          <div style={{ padding: '12px 18px', borderBottom: `1px solid ${BORDER}` }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setSearched(false); }}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                placeholder="e.g. efficacy claims for endocrinologists with STEP-1 citation…"
+                style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: 12, color: INK, outline: 'none' }}
+              />
+              <button onClick={handleSearch} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: VIOLET, color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                Search
+              </button>
+            </div>
+            {/* Sample queries */}
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {KG_SAMPLE_SEARCHES.map((s, i) => (
+                <button key={i} onClick={() => { setSearchQuery(s.q); setSearched(true); }}
+                  style={{ padding: '2px 8px', borderRadius: 99, border: `1px solid ${BORDER}`, background: '#F8FAFC', color: MUTED, fontSize: 10, cursor: 'pointer', textAlign: 'left' }}>
+                  "{s.q.slice(0, 44)}…"
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Claims list */}
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            {KG_CLAIMS.map((c, idx) => (
+              <div key={c.id} onClick={() => setActiveClaimIdx(idx)}
+                style={{ padding: '11px 18px', borderBottom: `1px solid ${BORDER}`, cursor: 'pointer', background: activeClaimIdx === idx ? '#F5F3FF' : '#fff', transition: 'background 0.15s' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: INK, flex: 1, lineHeight: 1.4 }}>{c.text}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#F59E0B', background: '#FFFBEB', padding: '2px 6px', borderRadius: 99, whiteSpace: 'nowrap', flexShrink: 0 }}>Claim</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, color: ACCENT, fontWeight: 600 }}>{c.study}</span>
+                  <span style={{ fontSize: 10, color: MUTED }}>{c.assets.length} asset{c.assets.length > 1 ? 's' : ''}</span>
+                  <span style={{ fontSize: 10, color: MUTED }}>MLR {c.mlrDate}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Claim provenance detail */}
+          {activeClaim && (
+            <div style={{ borderTop: `1px solid ${BORDER}`, padding: '12px 18px', background: '#FAFCFF' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: VIOLET, marginBottom: 6 }}>Claim Provenance — {activeClaim.id}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 6, fontSize: 10 }}>
+                  <span style={{ color: MUTED, fontWeight: 600, minWidth: 70 }}>Source:</span>
+                  <span style={{ color: INK }}>{activeClaim.study}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, fontSize: 10 }}>
+                  <span style={{ color: MUTED, fontWeight: 600, minWidth: 70 }}>Channel:</span>
+                  <span style={{ color: INK }}>{activeClaim.channel}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, fontSize: 10 }}>
+                  <span style={{ color: MUTED, fontWeight: 600, minWidth: 70 }}>Used in:</span>
+                  <span style={{ color: INK }}>{activeClaim.assets.join(', ')}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, fontSize: 10 }}>
+                  <span style={{ color: MUTED, fontWeight: 600, minWidth: 70 }}>MLR date:</span>
+                  <span style={{ color: GREEN, fontWeight: 700 }}>{activeClaim.mlrDate} ✓</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Graph visualization */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <GitBranch size={14} color={VIOLET} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Knowledge Graph — Claim ↔ Study ↔ Asset</span>
+          </div>
+          <div style={{ padding: '16px 18px' }}>
+            <KGGraphViz />
+          </div>
+        </div>
+      </div>
+
+      {/* Use case cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+        {USE_CASES.map((uc, i) => {
+          const Icon = uc.icon;
+          return (
+            <div key={i} style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '16px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: uc.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon size={14} color={uc.color} />
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>{uc.title}</span>
+              </div>
+              <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.6 }}>{uc.body}</div>
+            </div>
+          );
+        })}
+      </div>
+
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB 7 — Governance (Approval + Distribution + Retiral + Citation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GovernanceTab() {
+  const [activeAppr, setActiveAppr] = useState(null);
+
+  const stageColor = { Medical: '#0F766E', Legal: VIOLET, Regulatory: AMBER, Brand: ACCENT, Approved: GREEN };
+  const statusStyle = {
+    pending_sig: { label: 'Pending e-Sig', color: AMBER, bg: '#FFFBEB' },
+    in_review:   { label: 'In Review',    color: ACCENT, bg: '#EFF6FF' },
+    approved:    { label: 'Approved',     color: GREEN,  bg: '#E8F7F0' },
+  };
+  const distStyle = {
+    synced: { label: 'Synced', color: GREEN, bg: '#E8F7F0' },
+    stale:  { label: 'Stale',  color: AMBER, bg: '#FFFBEB' },
+  };
+  const severityColor = { high: RED, medium: AMBER, low: MUTED, info: ACCENT };
+
+  const govKpi = [
+    { label: 'Pending Signatures', value: String(GOV_APPROVALS.filter(a => a.status === 'pending_sig').length), accent: AMBER },
+    { label: 'Active Distributions', value: String(GOV_DIST_CHANNELS.filter(c => c.status === 'synced').reduce((s, c) => s + c.assets, 0)), accent: ACCENT },
+    { label: 'Expiring (30d)', value: String(GOV_RETIRING.length), accent: RED },
+    { label: 'Citation Flags', value: String(GOV_CITATIONS.length), accent: '#DC2626' },
+  ];
+
+  return (
+    <div style={{ padding: '20px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Agent insight */}
+      <AgentInsightPanel
+        endpoint="/content-strategy/agent-insight"
+        screenId="content-strategy-governance"
+        accentColor={AMBER}
+        insightOnly={true}
+      />
+
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        {govKpi.map(k => (
+          <div key={k.label} style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <span style={{ fontSize: 11, color: MUTED, fontWeight: 600 }}>{k.label}</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: k.accent }}>{k.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Approval queue + Distribution */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
+
+        {/* Approval queue */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Lock size={14} color={AMBER} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Approval Queue — 21 CFR Part 11</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: AMBER }}>{GOV_APPROVALS.filter(a => a.status !== 'approved').length} pending</span>
+          </div>
+          <div>
+            {GOV_APPROVALS.map((a, i) => {
+              const ss = statusStyle[a.status] || statusStyle.approved;
+              const sc = stageColor[a.stage] || MUTED;
+              return (
+                <div key={a.id}
+                  onClick={() => setActiveAppr(activeAppr === a.id ? null : a.id)}
+                  style={{
+                    padding: '11px 18px', borderBottom: i < GOV_APPROVALS.length - 1 ? `1px solid ${BORDER}` : 'none',
+                    cursor: 'pointer', background: activeAppr === a.id ? '#FFFBF0' : '#fff', transition: 'background 0.15s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: INK }}>{a.name}</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 3, alignItems: 'center' }}>
+                        <span style={{ fontSize: 10, color: MUTED }}>{a.id}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: sc }}>● {a.stage}</span>
+                        <span style={{ fontSize: 10, color: MUTED }}>{a.reviewer}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, color: ss.color, background: ss.bg }}>{ss.label}</span>
+                      {a.days > 0 && <span style={{ fontSize: 10, color: MUTED }}>{a.days}d in stage</span>}
+                    </div>
+                  </div>
+                  {activeAppr === a.id && (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                      {a.status === 'pending_sig' && (
+                        <button style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: GREEN, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                          ✍ Apply e-Signature
+                        </button>
+                      )}
+                      <button style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: MUTED, fontSize: 11, cursor: 'pointer' }}>
+                        View Version History
+                      </button>
+                      <button style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: MUTED, fontSize: 11, cursor: 'pointer' }}>
+                        Audit Trail
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Distribution orchestration */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Globe size={14} color={ACCENT} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Distribution Orchestration</span>
+          </div>
+          <div style={{ padding: '4px 0' }}>
+            {GOV_DIST_CHANNELS.map((ch, i) => {
+              const Icon = ch.icon;
+              const ds = distStyle[ch.status];
+              return (
+                <div key={ch.channel} style={{ padding: '11px 18px', borderBottom: i < GOV_DIST_CHANNELS.length - 1 ? `1px solid ${BORDER}` : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: ch.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Icon size={14} color={ch.color} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: INK }}>{ch.channel}</div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
+                      {ch.assets} assets · last sync {ch.lastSync}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, color: ds.color, background: ds.bg }}>{ds.label}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ padding: '12px 18px', borderTop: `1px solid ${BORDER}`, display: 'flex', gap: 8 }}>
+            <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              ↻ Sync All Channels
+            </button>
+            <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: MUTED, fontSize: 11, cursor: 'pointer' }}>
+              Sync Report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Retiral + Citation surveillance */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* Retiral management */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Archive size={14} color={AMBER} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Retiral Management</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: AMBER }}>{GOV_RETIRING.length} expiring soon</span>
+          </div>
+          <div>
+            {GOV_RETIRING.map((r, i) => (
+              <div key={r.id} style={{ padding: '12px 18px', borderBottom: i < GOV_RETIRING.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: INK }}>{r.name}</div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>{r.reason}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: severityColor[r.severity] }}>{r.daysLeft}d</div>
+                    <div style={{ fontSize: 9, color: MUTED }}>Expires {r.expires}</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                  <button style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: AMBER, color: '#fff', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>
+                    Initiate Refresh
+                  </button>
+                  <button style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: MUTED, fontSize: 10, cursor: 'pointer' }}>
+                    Archive
+                  </button>
+                  <button style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: MUTED, fontSize: 10, cursor: 'pointer' }}>
+                    Extend 30d
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Citation surveillance */}
+        <div style={{ background: '#fff', borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Search size={14} color={RED} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Citation Surveillance Agent</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: RED }}>{GOV_CITATIONS.filter(c => c.severity === 'high').length} high-priority</span>
+          </div>
+          <div style={{ padding: '10px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', gap: 8, fontSize: 10, color: MUTED }}>
+            <span>🔍 Monitors: PubMed · ClinicalTrials.gov · FDA Safety Alerts</span>
+            <span style={{ marginLeft: 'auto' }}>Last check: 6h ago</span>
+          </div>
+          <div>
+            {GOV_CITATIONS.map((c, i) => (
+              <div key={c.id} style={{ padding: '14px 18px', borderBottom: i < GOV_CITATIONS.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                  <AlertTriangle size={13} color={severityColor[c.severity]} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: INK }}>{c.content}</div>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>Citation: {c.citation}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: INK, background: c.severity === 'high' ? '#FFF3F2' : '#EFF6FF', borderRadius: 6, padding: '8px 10px', borderLeft: `3px solid ${severityColor[c.severity]}`, lineHeight: 1.5, marginBottom: 8 }}>
+                  {c.flag}
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, color: severityColor[c.severity], background: c.severity === 'high' ? '#FFF3F2' : '#EFF6FF' }}>{c.action}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: '12px 18px', borderTop: `1px solid ${BORDER}`, fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
+            Agent checks PubMed RSS, ClinicalTrials.gov updates, and FDA MedWatch feeds every 6 hours. Retraction notices trigger immediate recall task creation in CRM.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Root page component
 // ─────────────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'mlr-review',   label: 'MLR Review' },
-  { id: 'auto-tagging', label: 'Auto-Tagging' },
-  { id: 'overview',     label: 'Overview' },
-  { id: 'studio',       label: 'Content Studio' },
-  { id: 'engagement',   label: 'Content Engagement' },
-  { id: 'performance',  label: 'Performance & Optimization' },
+  { id: 'overview',        label: 'Overview' },
+  { id: 'auto-tagging',    label: 'Intake & Tagging' },
+  { id: 'knowledge-graph', label: 'Knowledge Graph' },
+  { id: 'studio',          label: 'Content Studio' },
+  { id: 'mlr-review',      label: 'MLR Review' },
+  { id: 'governance',      label: 'Approval & Distribution' },
+  { id: 'engagement',      label: 'Content Engagement' },
+  { id: 'performance',     label: 'Performance' },
 ];
 
 export default function ContentStrategyPage() {
   const navigate  = useNavigate();
-  const [tab, setTab] = useState('mlr-review');
+  const [tab, setTab] = useState('overview');
   const greeting  = getGreeting();
   const persona   = PERSONA_NAMES.contentStrategy || { name: 'Dana Whitfield', role: 'Content Strategy Lead' };
+
+  // Wire global tab navigator for pipeline step cards
+  useEffect(() => { _tabNav = setTab; return () => { _tabNav = null; }; }, [setTab]);
 
   useEffect(() => {
     if (!isLoggedIn()) { clearAuth(); navigate('/login'); }
@@ -3077,12 +3623,14 @@ export default function ContentStrategyPage() {
       <style>{ANIM_CSS}</style>
       <ScreenHeader persona={persona} tab={tab} setTab={setTab} tabs={TABS} greeting={greeting} />
       <div style={{ flex:1, overflowY:'auto' }}>
-        {tab === 'mlr-review'   && <MLRReviewTab />}
-        {tab === 'auto-tagging' && <AutoTaggingTab />}
-        {tab === 'overview'     && <OverviewTab />}
-        {tab === 'studio'       && <ContentStudioTab />}
-        {tab === 'engagement'   && <ContentEngagementTab />}
-        {tab === 'performance'  && <PerformanceTab />}
+        {tab === 'overview'        && <OverviewTab />}
+        {tab === 'auto-tagging'    && <AutoTaggingTab />}
+        {tab === 'knowledge-graph' && <KnowledgeGraphTab />}
+        {tab === 'studio'          && <ContentStudioTab />}
+        {tab === 'mlr-review'      && <MLRReviewTab />}
+        {tab === 'governance'      && <GovernanceTab />}
+        {tab === 'engagement'      && <ContentEngagementTab />}
+        {tab === 'performance'     && <PerformanceTab />}
       </div>
       <ChatFAB endpoint="/content-strategy/ask" screenId="content-strategy" accentColor={ACCENT} />
     </div>
